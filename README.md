@@ -2,6 +2,23 @@
 
 Use the starter kit to get your docs deployed and ready to customize.
 
+## Quick Start
+
+**[See SETUP.md for detailed setup instructions](./SETUP.md)**
+
+### Run Locally (Recommended)
+```bash
+npx mint dev
+```
+Open http://localhost:3000 to view your documentation!
+
+### Deploy to Cloud
+1. Go to [dashboard.mintlify.com](https://dashboard.mintlify.com)
+2. Connect your GitHub repository
+3. Your docs will be live in minutes!
+
+---
+
 Click the green **Use this template** button at the top of this repo to copy the Mintlify starter kit. The starter kit contains examples with
 
 - Guide pages
