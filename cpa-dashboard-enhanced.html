@@ -799,6 +799,54 @@
         </div>
     </div>
 
+    <!-- Journal Entry Generator Modal -->
+    <div id="jeModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeJEModal()">&times;</span>
+            <h2>📝 Generate Journal Entry</h2>
+
+            <div id="jeTransactionInfo" style="margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;"></div>
+
+            <div class="form-group">
+                <label>Journal Entry Type</label>
+                <select id="jeType" onchange="updateJETemplate()">
+                    <option value="reclass">Reclassification</option>
+                    <option value="correction">Correction</option>
+                    <option value="reversal">Reversal</option>
+                    <option value="accrual">Accrual</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Debit Account</label>
+                <input type="text" id="jeDebitAccount" placeholder="e.g., Program Expenses - Education">
+            </div>
+
+            <div class="form-group">
+                <label>Credit Account</label>
+                <input type="text" id="jeCreditAccount" placeholder="e.g., Office Supplies">
+            </div>
+
+            <div class="form-group">
+                <label>Memo/Description</label>
+                <textarea id="jeMemo" rows="2" placeholder="Auto-filled from transaction"></textarea>
+            </div>
+
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                <h3 style="margin-bottom: 10px; font-size: 14px; color: var(--color-dark);">Preview</h3>
+                <pre id="jePreview" style="font-family: 'Courier New', monospace; font-size: 13px; white-space: pre; overflow-x: auto;"></pre>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 20px;">
+                <div>
+                    <button onclick="copyJEToClipboard()" style="background: var(--color-info);">📋 Copy to Clipboard</button>
+                    <button onclick="downloadJEAsCSV()" style="background: var(--color-success);">📥 Download CSV</button>
+                </div>
+                <button onclick="closeJEModal()" style="background: var(--color-secondary);">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script>
     // ============================================================================
     // GLOBAL ERROR HANDLER
@@ -989,6 +1037,10 @@
     // DATA PROCESSING
     // ============================================================================
     function processData(data) {
+        console.log(`📊 Processing ${data.length} transactions...`);
+        console.log('Sample row:', data[0]);
+        console.log('Available columns:', Object.keys(data[0] || {}));
+
         allData = data.map((row, index) => {
             // Generate stable transaction ID
             const dateStr = row['Transaction date'] || '';
@@ -999,7 +1051,7 @@
             // Determine initial status
             let initialStatus = 'gray';
             if (row['legitimacy']) {
-                initialStatus = parseL egitimacy(row['legitimacy']);
+                initialStatus = parseLegitimacy(row['legitimacy']);
             }
 
             // Override with saved review state
@@ -1021,6 +1073,10 @@
                 riskScore: calculateRiskScore(row, amount)
             };
         });
+
+        console.log(`✅ Successfully loaded ${allData.length} transactions`);
+        console.log(`📅 Date range: ${allData[0]?.date.toLocaleDateString()} to ${allData[allData.length-1]?.date.toLocaleDateString()}`);
+        console.log(`🏢 Unique vendors: ${new Set(allData.map(t => t.vendor)).size}`);
 
         groupByVendor();
         updateDashboard();
@@ -1063,16 +1119,43 @@
     }
 
     function parseDate(dateValue) {
-        if (!dateValue) return new Date();
-        if (typeof dateValue === 'number') {
-            return new Date((dateValue - 25569) * 86400 * 1000);
-        }
-        const parsed = new Date(dateValue);
-        if (isNaN(parsed.getTime())) {
-            console.warn('Invalid date:', dateValue);
+        if (!dateValue) {
+            console.warn('Empty date value, using current date');
             return new Date();
         }
-        return parsed;
+
+        // Excel serial date (number)
+        if (typeof dateValue === 'number') {
+            // Excel stores dates as days since 1900-01-01
+            const excelEpoch = new Date(1900, 0, 1);
+            const days = dateValue - 2; // Excel bug: it thinks 1900 was a leap year
+            const date = new Date(excelEpoch.getTime() + days * 86400000);
+            console.log(`Parsed Excel serial date ${dateValue} -> ${date.toLocaleDateString()}`);
+            return date;
+        }
+
+        // Already a Date object
+        if (dateValue instanceof Date) {
+            if (isNaN(dateValue.getTime())) {
+                console.warn('Invalid Date object, using current date');
+                return new Date();
+            }
+            return dateValue;
+        }
+
+        // String date - try to parse
+        if (typeof dateValue === 'string') {
+            const parsed = new Date(dateValue);
+            if (isNaN(parsed.getTime())) {
+                console.warn(`Could not parse date string: "${dateValue}", using current date`);
+                return new Date();
+            }
+            return parsed;
+        }
+
+        // Unknown format
+        console.warn(`Unknown date format (${typeof dateValue}):`, dateValue, '- using current date');
+        return new Date();
     }
 
     function calculateRiskScore(row, amount) {
@@ -1402,6 +1485,7 @@
                                 <button class="btn-small btn-red" onclick="quickStatus('${trans.id}', 'red', event)">❌</button>
                                 <button class="btn-small btn-yellow" onclick="quickStatus('${trans.id}', 'yellow', event)">⚠️</button>
                                 <button class="btn-small" onclick="openReviewModal('${trans.id}', event)">📝</button>
+                                <button class="btn-small" onclick="openJEModal('${trans.id}', event)" style="background: var(--color-info);" title="Generate Journal Entry">🧾</button>
                             </div>
                         </td>
                     </tr>
@@ -1980,10 +2064,157 @@
         alert('Compliance Report export feature coming soon');
     }
 
+    // ============================================================================
+    // JOURNAL ENTRY GENERATOR
+    // ============================================================================
+    let currentJETransaction = null;
+    let jeCounter = safeLocalStorageGet('jeCounter', 1);
+
+    function openJEModal(transId, event) {
+        if (event) event.stopPropagation();
+
+        currentJETransaction = allData.find(t => t.id === transId);
+        if (!currentJETransaction) return;
+
+        // Populate transaction info
+        const infoDiv = document.getElementById('jeTransactionInfo');
+        infoDiv.textContent = `Transaction: ${currentJETransaction.vendor} | Date: ${currentJETransaction.date.toLocaleDateString()} | Amount: $${Math.abs(currentJETransaction.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+
+        // Auto-fill memo
+        document.getElementById('jeMemo').value = `Reclassify TXN ${currentJETransaction.id.substring(0, 20)} - ${currentJETransaction.description.substring(0, 50)}`;
+
+        // Clear accounts
+        document.getElementById('jeDebitAccount').value = '';
+        document.getElementById('jeCreditAccount').value = '';
+
+        // Show modal
+        document.getElementById('jeModal').style.display = 'block';
+
+        // Update preview
+        setTimeout(updateJEPreview, 100);
+    }
+
+    function closeJEModal() {
+        document.getElementById('jeModal').style.display = 'none';
+        currentJETransaction = null;
+    }
+
+    function updateJETemplate() {
+        // Update preview when template changes
+        updateJEPreview();
+    }
+
+    function updateJEPreview() {
+        if (!currentJETransaction) return;
+
+        const type = document.getElementById('jeType').value;
+        const debitAcct = document.getElementById('jeDebitAccount').value || '[Debit Account]';
+        const creditAcct = document.getElementById('jeCreditAccount').value || '[Credit Account]';
+        const memo = document.getElementById('jeMemo').value;
+        const amount = Math.abs(currentJETransaction.amount);
+
+        const jeNumber = `JE-${new Date().getFullYear()}-${String(jeCounter).padStart(4, '0')}`;
+        const jeDate = currentJETransaction.date.toLocaleDateString();
+
+        let preview = ``;
+        preview += `Journal Entry: ${jeNumber}\n`;
+        preview += `Date: ${jeDate}\n`;
+        preview += `Type: ${type.charAt(0).toUpperCase() + type.slice(1)}\n`;
+        preview += `\n`;
+        preview += `Account                                    Debit        Credit\n`;
+        preview += `─────────────────────────────────────────────────────────────────\n`;
+
+        if (type === 'reversal') {
+            // Reversal - credit first, then debit
+            preview += `${creditAcct.padEnd(40)} `.padEnd(55) + `$${amount.toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
+            preview += `  ${debitAcct.padEnd(38)}`.padEnd(42) + `$${amount.toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
+        } else {
+            // Normal - debit first, then credit
+            preview += `${debitAcct.padEnd(40)} $${amount.toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
+            preview += `  ${creditAcct.padEnd(38)}`.padEnd(55) + `$${amount.toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
+        }
+
+        preview += `\n`;
+        preview += `Memo: ${memo}\n`;
+        preview += `─────────────────────────────────────────────────────────────────\n`;
+        preview += `Total:                                     $${amount.toLocaleString('en-US', {minimumFractionDigits: 2})} $${amount.toLocaleString('en-US', {minimumFractionDigits: 2})}\n`;
+
+        document.getElementById('jePreview').textContent = preview;
+    }
+
+    // Real-time preview updates
+    document.addEventListener('DOMContentLoaded', function() {
+        const jeInputs = ['jeDebitAccount', 'jeCreditAccount', 'jeMemo'];
+        jeInputs.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('input', updateJEPreview);
+            }
+        });
+    });
+
+    function copyJEToClipboard() {
+        const preview = document.getElementById('jePreview').textContent;
+        navigator.clipboard.writeText(preview).then(() => {
+            alert('✅ Journal Entry copied to clipboard!');
+        }).catch(err => {
+            console.error('Copy failed:', err);
+            // Fallback
+            const textArea = document.createElement('textarea');
+            textArea.value = preview;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            alert('✅ Journal Entry copied to clipboard!');
+        });
+    }
+
+    function downloadJEAsCSV() {
+        if (!currentJETransaction) return;
+
+        const type = document.getElementById('jeType').value;
+        const debitAcct = document.getElementById('jeDebitAccount').value || '[Debit Account]';
+        const creditAcct = document.getElementById('jeCreditAccount').value || '[Credit Account]';
+        const memo = document.getElementById('jeMemo').value;
+        const amount = Math.abs(currentJETransaction.amount);
+        const jeNumber = `JE-${new Date().getFullYear()}-${String(jeCounter).padStart(4, '0')}`;
+        const jeDate = currentJETransaction.date.toLocaleDateString('en-US');
+
+        // QuickBooks CSV format
+        let csv = 'Journal Entry Number,Date,Account,Debit,Credit,Memo\n';
+
+        if (type === 'reversal') {
+            csv += `${jeNumber},${jeDate},${creditAcct},,${amount.toFixed(2)},${memo}\n`;
+            csv += `${jeNumber},${jeDate},${debitAcct},${amount.toFixed(2)},,${memo}\n`;
+        } else {
+            csv += `${jeNumber},${jeDate},${debitAcct},${amount.toFixed(2)},,${memo}\n`;
+            csv += `${jeNumber},${jeDate},${creditAcct},,${amount.toFixed(2)},${memo}\n`;
+        }
+
+        // Download
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${jeNumber}_${currentJETransaction.vendor.replace(/[^a-zA-Z0-9]/g, '_')}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+
+        // Increment counter
+        jeCounter++;
+        safeLocalStorageSet('jeCounter', jeCounter);
+
+        alert('✅ CSV downloaded! Import into QuickBooks.');
+    }
+
     // Close modal when clicking outside
     window.onclick = function(event) {
         if (event.target.id === 'reviewModal') {
             closeModal();
+        }
+        if (event.target.id === 'jeModal') {
+            closeJEModal();
         }
         if (event.target.id === 'shortcutsHelp') {
             toggleShortcutsHelp();
