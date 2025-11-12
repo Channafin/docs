@@ -1347,6 +1347,7 @@
 
         const statusCtx = document.getElementById('statusChart');
         if (statusCtx) {
+            const totalCount = Object.values(statusCounts).reduce((a, b) => a + b, 0);
             charts.status = new Chart(statusCtx, {
                 type: 'doughnut',
                 data: {
@@ -1362,9 +1363,23 @@
                     responsive: true,
                     maintainAspectRatio: true,
                     plugins: {
-                        legend: { position: 'right' }
+                        legend: { position: 'right' },
+                        datalabels: {
+                            display: true,
+                            color: '#fff',
+                            font: {
+                                weight: 'bold',
+                                size: 12
+                            },
+                            formatter: (value, context) => {
+                                if (value === 0) return '';
+                                const percentage = totalCount > 0 ? ((value / totalCount) * 100).toFixed(1) : 0;
+                                return `${value}\n(${percentage}%)`;
+                            }
+                        }
                     }
-                }
+                },
+                plugins: [ChartDataLabels]
             });
         }
 
