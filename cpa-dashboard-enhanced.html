@@ -654,7 +654,7 @@
                     <span style="margin-left: 20px; color: #95a5a6;">|</span>
                     <strong style="color: #34495e;">View:</strong>
                     <button id="viewMonthly" onclick="setChartView('monthly')" style="background: #3498db; color: white; font-weight: bold;">📅 Monthly</button>
-                    <button id="viewQuarterly" onclick="setChartView('quarterly')">📊 Quarterly</button>
+                    <button id="viewAnnual" onclick="setChartView('annual')">📊 Annual</button>
                 </div>
             </div>
 
@@ -1329,7 +1329,11 @@
             filteredData = allData.filter(t => t.status === currentChartFilter);
         }
         if (currentTypeFilter !== 'all') {
-            filteredData = filteredData.filter(t => t.type === currentTypeFilter);
+            filteredData = filteredData.filter(t => {
+                const typeLower = (t.type || '').toLowerCase();
+                const filterLower = currentTypeFilter.toLowerCase();
+                return typeLower.includes(filterLower) || typeLower.includes(filterLower.replace(' ', ''));
+            });
         }
 
         // Status chart
@@ -1368,8 +1372,8 @@
         const monthlyData = {};
         periodVendorData = {};
         filteredData.forEach(t => {
-            const key = chartView === 'quarterly' ?
-                `${t.date.getFullYear()}-Q${Math.ceil((t.date.getMonth() + 1) / 3)}` :
+            const key = chartView === 'annual' ?
+                `${t.date.getFullYear()}` :
                 t.date.getFullYear() + '-' + String(t.date.getMonth() + 1).padStart(2, '0');
 
             monthlyData[key] = (monthlyData[key] || 0) + t.amount;
@@ -1390,7 +1394,7 @@
                 data: {
                     labels: sortedMonths.map(([k]) => k),
                     datasets: [{
-                        label: chartView === 'quarterly' ? 'Quarterly Volume' : 'Monthly Volume',
+                        label: chartView === 'annual' ? 'Annual Volume' : 'Monthly Volume',
                         data: sortedMonths.map(([, v]) => v),
                         borderColor: currentChartFilter === 'green' ? '#27ae60' :
                                    currentChartFilter === 'red' ? '#e74c3c' :
@@ -1816,17 +1820,17 @@
 
         // Reset view buttons
         const monthlyBtn = document.getElementById('viewMonthly');
-        const quarterlyBtn = document.getElementById('viewQuarterly');
+        const annualBtn = document.getElementById('viewAnnual');
 
         if (monthlyBtn) {
             monthlyBtn.style.background = '#ecf0f1';
             monthlyBtn.style.color = '#2c3e50';
             monthlyBtn.style.fontWeight = 'normal';
         }
-        if (quarterlyBtn) {
-            quarterlyBtn.style.background = '#ecf0f1';
-            quarterlyBtn.style.color = '#2c3e50';
-            quarterlyBtn.style.fontWeight = 'normal';
+        if (annualBtn) {
+            annualBtn.style.background = '#ecf0f1';
+            annualBtn.style.color = '#2c3e50';
+            annualBtn.style.fontWeight = 'normal';
         }
 
         // Highlight active button
@@ -1834,10 +1838,10 @@
             monthlyBtn.style.background = '#3498db';
             monthlyBtn.style.color = 'white';
             monthlyBtn.style.fontWeight = 'bold';
-        } else if (view === 'quarterly' && quarterlyBtn) {
-            quarterlyBtn.style.background = '#3498db';
-            quarterlyBtn.style.color = 'white';
-            quarterlyBtn.style.fontWeight = 'bold';
+        } else if (view === 'annual' && annualBtn) {
+            annualBtn.style.background = '#3498db';
+            annualBtn.style.color = 'white';
+            annualBtn.style.fontWeight = 'bold';
         }
 
         updateCharts();
