@@ -391,6 +391,7 @@
         .status-red { background: var(--color-danger); }
         .status-yellow { background: var(--color-warning); }
         .status-gray { background: var(--color-secondary); }
+        .status-reclass { background: #8e44ad; }
 
         .action-buttons {
             display: flex;
@@ -600,6 +601,11 @@
                     <div class="stat-value" id="highRiskCount">0</div>
                     <div class="stat-subtext" id="riskAmount">$0.00</div>
                 </div>
+                <div class="stat-card" style="border-left-color: #8e44ad;">
+                    <div class="stat-label">Reclass to Revenue</div>
+                    <div class="stat-value" id="reclassCount">0</div>
+                    <div class="stat-subtext" id="reclassAmount">$0.00</div>
+                </div>
             </div>
         </div>
 
@@ -629,6 +635,27 @@
                 </div>
                 <button onclick="updateDashboard()">🔄 Refresh Analysis</button>
                 <button onclick="toggleShortcutsHelp()">⌨️ Keyboard Shortcuts</button>
+            </div>
+
+            <!-- Chart Filters -->
+            <div style="background: white; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <strong style="color: #34495e;">Filter Charts:</strong>
+                    <button id="chartFilterAll" onclick="filterCharts('all')" style="background: #3498db; color: white; font-weight: bold;">All</button>
+                    <button id="chartFilterGreen" onclick="filterCharts('green')" style="background: #d4edda; color: #155724;">✅ Green (Mission)</button>
+                    <button id="chartFilterRed" onclick="filterCharts('red')" style="background: #f8d7da; color: #721c24;">❌ Red (Non-mission)</button>
+                    <button id="chartFilterYellow" onclick="filterCharts('yellow')" style="background: #fff3cd; color: #856404;">⚠️ Yellow (Review)</button>
+                    <button id="chartFilterReclass" onclick="filterCharts('reclass')" style="background: #e8daef; color: #4a235a;">🔄 Reclass</button>
+                    <span style="margin-left: 20px; color: #95a5a6;">|</span>
+                    <strong style="color: #34495e;">Type:</strong>
+                    <button id="typeFilterAll" onclick="filterByType('all')" style="background: #3498db; color: white; font-weight: bold;">All</button>
+                    <button id="typeFilterCC" onclick="filterByType('Credit Card')">💳 Credit Card</button>
+                    <button id="typeFilterBank" onclick="filterByType('Bank')">🏦 Bank</button>
+                    <span style="margin-left: 20px; color: #95a5a6;">|</span>
+                    <strong style="color: #34495e;">View:</strong>
+                    <button id="viewMonthly" onclick="setChartView('monthly')" style="background: #3498db; color: white; font-weight: bold;">📅 Monthly</button>
+                    <button id="viewQuarterly" onclick="setChartView('quarterly')">📊 Quarterly</button>
+                </div>
             </div>
 
             <div class="charts-grid">
@@ -768,6 +795,7 @@
                     <option value="green">✅ Green - Mission Related</option>
                     <option value="red">❌ Red - Non-mission/Suspicious</option>
                     <option value="yellow">⚠️ Yellow - Needs Further Review</option>
+                    <option value="reclass">🔄 Reclass to Revenue</option>
                 </select>
             </div>
 
@@ -958,6 +986,9 @@
     let currentSelectedTransaction = null;
     let pdfAttachments = {};
     let chartView = 'monthly';
+    let currentChartFilter = 'all';
+    let currentTypeFilter = 'all';
+    let periodVendorData = {};
 
     // ============================================================================
     // INITIALIZATION
@@ -1108,7 +1139,9 @@
 
     function parseLegitimacy(legitValue) {
         const legitStr = String(legitValue).toLowerCase();
-        if (legitStr.includes('green') || legitStr.includes('good') || legitStr.includes('mission')) {
+        if (legitStr.includes('reclass') || legitStr === 'reclass to revenue') {
+            return 'reclass';
+        } else if (legitStr.includes('green') || legitStr.includes('good') || legitStr.includes('mission')) {
             return 'green';
         } else if (legitStr.includes('red') || legitStr.includes('bad') || legitStr.includes('suspicious')) {
             return 'red';
@@ -1194,7 +1227,7 @@
                     transactions: [],
                     totalAmount: 0,
                     count: 0,
-                    statuses: { green: 0, red: 0, yellow: 0, gray: 0 },
+                    statuses: { green: 0, red: 0, yellow: 0, gray: 0, reclass: 0 },
                     avgRisk: 0
                 };
             }
@@ -1229,6 +1262,11 @@
         const highRisk = allData.filter(t => t.riskScore >= 7);
         const reviewed = allData.filter(t => t.status !== 'gray').length;
 
+        // Reclass stats
+        const reclassTransactions = allData.filter(t => t.status === 'reclass');
+        const reclassCount = reclassTransactions.length;
+        const reclassAmt = reclassTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
         // Date range
         const dates = allData.map(d => d.date);
         const minDate = dates.length > 0 ? new Date(Math.min(...dates)) : new Date();
@@ -1252,6 +1290,8 @@
         document.getElementById('reviewCount').textContent = `${reviewed} of ${total} reviewed`;
         document.getElementById('highRiskCount').textContent = highRisk.length.toLocaleString();
         document.getElementById('riskAmount').textContent = '$' + highRisk.reduce((sum, t) => sum + Math.abs(t.amount), 0).toLocaleString('en-US', {minimumFractionDigits: 2});
+        document.getElementById('reclassCount').textContent = reclassCount.toLocaleString();
+        document.getElementById('reclassAmount').textContent = '$' + reclassAmt.toLocaleString('en-US', {minimumFractionDigits: 2});
     }
 
     // ============================================================================
@@ -1266,12 +1306,22 @@
         });
         charts = {};
 
+        // Filter data based on current filters
+        let filteredData = allData;
+        if (currentChartFilter !== 'all') {
+            filteredData = allData.filter(t => t.status === currentChartFilter);
+        }
+        if (currentTypeFilter !== 'all') {
+            filteredData = filteredData.filter(t => t.type === currentTypeFilter);
+        }
+
         // Status chart
         const statusCounts = {
-            'Mission Related': allData.filter(t => t.status === 'green').length,
-            'Non-mission': allData.filter(t => t.status === 'red').length,
-            'Needs Review': allData.filter(t => t.status === 'yellow').length,
-            'Unreviewed': allData.filter(t => t.status === 'gray').length
+            'Mission Related': filteredData.filter(t => t.status === 'green').length,
+            'Non-mission': filteredData.filter(t => t.status === 'red').length,
+            'Needs Review': filteredData.filter(t => t.status === 'yellow').length,
+            'Reclass to Revenue': filteredData.filter(t => t.status === 'reclass').length,
+            'Unreviewed': filteredData.filter(t => t.status === 'gray').length
         };
 
         const statusCtx = document.getElementById('statusChart');
@@ -1282,7 +1332,7 @@
                     labels: Object.keys(statusCounts),
                     datasets: [{
                         data: Object.values(statusCounts),
-                        backgroundColor: ['#27ae60', '#e74c3c', '#f39c12', '#95a5a6'],
+                        backgroundColor: ['#27ae60', '#e74c3c', '#f39c12', '#8e44ad', '#95a5a6'],
                         borderWidth: 2,
                         borderColor: '#fff'
                     }]
@@ -1297,11 +1347,21 @@
             });
         }
 
-        // Volume chart
+        // Volume chart with vendor tracking
         const monthlyData = {};
-        allData.forEach(t => {
-            const key = t.date.getFullYear() + '-' + String(t.date.getMonth() + 1).padStart(2, '0');
+        periodVendorData = {};
+        filteredData.forEach(t => {
+            const key = chartView === 'quarterly' ?
+                `${t.date.getFullYear()}-Q${Math.ceil((t.date.getMonth() + 1) / 3)}` :
+                t.date.getFullYear() + '-' + String(t.date.getMonth() + 1).padStart(2, '0');
+
             monthlyData[key] = (monthlyData[key] || 0) + t.amount;
+
+            // Track vendors per period
+            if (!periodVendorData[key]) {
+                periodVendorData[key] = {};
+            }
+            periodVendorData[key][t.vendor] = (periodVendorData[key][t.vendor] || 0) + t.amount;
         });
 
         const sortedMonths = Object.entries(monthlyData).sort((a, b) => a[0].localeCompare(b[0]));
@@ -1313,10 +1373,17 @@
                 data: {
                     labels: sortedMonths.map(([k]) => k),
                     datasets: [{
-                        label: 'Monthly Volume',
+                        label: chartView === 'quarterly' ? 'Quarterly Volume' : 'Monthly Volume',
                         data: sortedMonths.map(([, v]) => v),
-                        borderColor: '#3498db',
-                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderColor: currentChartFilter === 'green' ? '#27ae60' :
+                                   currentChartFilter === 'red' ? '#e74c3c' :
+                                   currentChartFilter === 'yellow' ? '#f39c12' :
+                                   currentChartFilter === 'reclass' ? '#8e44ad' : '#3498db',
+                        backgroundColor: currentChartFilter === 'green' ? 'rgba(39, 174, 96, 0.1)' :
+                                        currentChartFilter === 'red' ? 'rgba(231, 76, 60, 0.1)' :
+                                        currentChartFilter === 'yellow' ? 'rgba(243, 156, 18, 0.1)' :
+                                        currentChartFilter === 'reclass' ? 'rgba(142, 68, 173, 0.1)' :
+                                        'rgba(52, 152, 219, 0.1)',
                         tension: 0.4,
                         fill: true
                     }]
@@ -1329,14 +1396,48 @@
                             beginAtZero: true,
                             ticks: { callback: value => '$' + value.toLocaleString() }
                         }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                afterLabel: function(context) {
+                                    const period = context.label;
+                                    const vendors = periodVendorData[period];
+                                    if (!vendors) return [];
+
+                                    const sortedVendors = Object.entries(vendors)
+                                        .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+                                        .slice(0, 5); // Top 5 vendors
+
+                                    const lines = ['', 'Top Vendors:'];
+                                    sortedVendors.forEach(([vendor, amount]) => {
+                                        lines.push(`  ${vendor.substring(0, 20)}: $${Math.abs(amount).toLocaleString()}`);
+                                    });
+
+                                    if (Object.keys(vendors).length > 5) {
+                                        lines.push(`  ... and ${Object.keys(vendors).length - 5} more`);
+                                    }
+
+                                    return lines;
+                                }
+                            }
+                        }
                     }
                 }
             });
         }
 
-        // Top vendors
-        const topVendors = Object.entries(vendorGroups)
-            .sort((a, b) => Math.abs(b[1].totalAmount) - Math.abs(a[1].totalAmount))
+        // Top vendors - filtered
+        const filteredVendorGroups = {};
+        filteredData.forEach(trans => {
+            if (!filteredVendorGroups[trans.vendor]) {
+                filteredVendorGroups[trans.vendor] = 0;
+            }
+            filteredVendorGroups[trans.vendor] += trans.amount;
+        });
+
+        const topVendors = Object.entries(filteredVendorGroups)
+            .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
             .slice(0, 10);
 
         const vendorCtx = document.getElementById('vendorChart');
@@ -1347,8 +1448,11 @@
                     labels: topVendors.map(([name]) => name.substring(0, 30)),
                     datasets: [{
                         label: 'Total Amount',
-                        data: topVendors.map(([, data]) => data.totalAmount),
-                        backgroundColor: '#8e44ad'
+                        data: topVendors.map(([, amount]) => amount),
+                        backgroundColor: currentChartFilter === 'green' ? '#27ae60' :
+                                        currentChartFilter === 'red' ? '#e74c3c' :
+                                        currentChartFilter === 'yellow' ? '#f39c12' :
+                                        currentChartFilter === 'reclass' ? '#8e44ad' : '#7f3d9b'
                     }]
                 },
                 options: {
@@ -1360,8 +1464,35 @@
                             beginAtZero: true,
                             ticks: { callback: value => '$' + value.toLocaleString() }
                         }
+                    },
+                    plugins: {
+                        datalabels: {
+                            display: true,
+                            anchor: 'end',
+                            align: 'right',
+                            color: '#fff',
+                            backgroundColor: function(context) {
+                                return currentChartFilter === 'green' ? '#27ae60' :
+                                       currentChartFilter === 'red' ? '#c0392b' :
+                                       currentChartFilter === 'yellow' ? '#f39c12' :
+                                       currentChartFilter === 'reclass' ? '#7f3d9b' : '#7f3d9b';
+                            },
+                            borderRadius: 3,
+                            padding: 4,
+                            font: { weight: 'bold', size: 10 },
+                            formatter: (value) => {
+                                const absValue = Math.abs(value);
+                                if (absValue >= 1000000) {
+                                    return '$' + (value / 1000000).toFixed(1) + 'M';
+                                } else if (absValue >= 1000) {
+                                    return '$' + (value / 1000).toFixed(0) + 'K';
+                                }
+                                return '$' + value.toFixed(0);
+                            }
+                        }
                     }
-                }
+                },
+                plugins: [ChartDataLabels]
             });
         }
 
@@ -1411,9 +1542,10 @@
             const vendorId = 'vendor_' + vendorName.replace(/[^a-zA-Z0-9]/g, '_');
             const escapedVendor = escapeHtml(vendorName);
 
-            // Vendor status
+            // Vendor status (priority: red > reclass > yellow > green > gray)
             let vendorStatus = 'gray';
             if (vendorData.statuses.red > 0) vendorStatus = 'red';
+            else if (vendorData.statuses.reclass > 0) vendorStatus = 'reclass';
             else if (vendorData.statuses.yellow > 0) vendorStatus = 'yellow';
             else if (vendorData.statuses.green > 0) vendorStatus = 'green';
 
@@ -1467,7 +1599,7 @@
                         </td>
                         <td style="text-align: center;">
                             <span class="status-indicator status-${trans.status}"></span>
-                            ${trans.status === 'green' ? 'Green' : trans.status === 'red' ? 'Red' : trans.status === 'yellow' ? 'Yellow' : 'Unreviewed'}
+                            ${trans.status === 'green' ? 'Green' : trans.status === 'red' ? 'Red' : trans.status === 'yellow' ? 'Yellow' : trans.status === 'reclass' ? 'Reclass' : 'Unreviewed'}
                         </td>
                         <td style="text-align: center;">
                             ${pdfAttachments[trans.id] && pdfAttachments[trans.id].length > 0 ?
@@ -1526,6 +1658,146 @@
 
     function selectAllVisible() {
         document.querySelectorAll('.transaction-row.visible .trans-checkbox').forEach(cb => cb.checked = true);
+    }
+
+    // ============================================================================
+    // CHART FILTERING
+    // ============================================================================
+    function filterCharts(filter) {
+        currentChartFilter = filter;
+
+        // Reset all buttons to default color-coded states
+        const allBtn = document.getElementById('chartFilterAll');
+        const greenBtn = document.getElementById('chartFilterGreen');
+        const redBtn = document.getElementById('chartFilterRed');
+        const yellowBtn = document.getElementById('chartFilterYellow');
+        const reclassBtn = document.getElementById('chartFilterReclass');
+
+        // Reset styling
+        if (allBtn) {
+            allBtn.style.background = '#ecf0f1';
+            allBtn.style.color = '#2c3e50';
+            allBtn.style.fontWeight = 'normal';
+        }
+        if (greenBtn) {
+            greenBtn.style.background = '#d4edda';
+            greenBtn.style.color = '#155724';
+            greenBtn.style.fontWeight = 'normal';
+        }
+        if (redBtn) {
+            redBtn.style.background = '#f8d7da';
+            redBtn.style.color = '#721c24';
+            redBtn.style.fontWeight = 'normal';
+        }
+        if (yellowBtn) {
+            yellowBtn.style.background = '#fff3cd';
+            yellowBtn.style.color = '#856404';
+            yellowBtn.style.fontWeight = 'normal';
+        }
+        if (reclassBtn) {
+            reclassBtn.style.background = '#e8daef';
+            reclassBtn.style.color = '#4a235a';
+            reclassBtn.style.fontWeight = 'normal';
+        }
+
+        // Highlight active button
+        if (filter === 'all' && allBtn) {
+            allBtn.style.background = '#3498db';
+            allBtn.style.color = 'white';
+            allBtn.style.fontWeight = 'bold';
+        } else if (filter === 'green' && greenBtn) {
+            greenBtn.style.background = '#27ae60';
+            greenBtn.style.color = 'white';
+            greenBtn.style.fontWeight = 'bold';
+        } else if (filter === 'red' && redBtn) {
+            redBtn.style.background = '#e74c3c';
+            redBtn.style.color = 'white';
+            redBtn.style.fontWeight = 'bold';
+        } else if (filter === 'yellow' && yellowBtn) {
+            yellowBtn.style.background = '#f39c12';
+            yellowBtn.style.color = 'white';
+            yellowBtn.style.fontWeight = 'bold';
+        } else if (filter === 'reclass' && reclassBtn) {
+            reclassBtn.style.background = '#8e44ad';
+            reclassBtn.style.color = 'white';
+            reclassBtn.style.fontWeight = 'bold';
+        }
+
+        updateCharts();
+    }
+
+    function filterByType(type) {
+        currentTypeFilter = type;
+
+        // Reset all type filter buttons
+        const allBtn = document.getElementById('typeFilterAll');
+        const ccBtn = document.getElementById('typeFilterCC');
+        const bankBtn = document.getElementById('typeFilterBank');
+
+        if (allBtn) {
+            allBtn.style.background = '#ecf0f1';
+            allBtn.style.color = '#2c3e50';
+            allBtn.style.fontWeight = 'normal';
+        }
+        if (ccBtn) {
+            ccBtn.style.background = '#ecf0f1';
+            ccBtn.style.color = '#2c3e50';
+            ccBtn.style.fontWeight = 'normal';
+        }
+        if (bankBtn) {
+            bankBtn.style.background = '#ecf0f1';
+            bankBtn.style.color = '#2c3e50';
+            bankBtn.style.fontWeight = 'normal';
+        }
+
+        // Highlight active button
+        if (type === 'all' && allBtn) {
+            allBtn.style.background = '#3498db';
+            allBtn.style.color = 'white';
+            allBtn.style.fontWeight = 'bold';
+        } else if (type === 'Credit Card' && ccBtn) {
+            ccBtn.style.background = '#3498db';
+            ccBtn.style.color = 'white';
+            ccBtn.style.fontWeight = 'bold';
+        } else if (type === 'Bank' && bankBtn) {
+            bankBtn.style.background = '#3498db';
+            bankBtn.style.color = 'white';
+            bankBtn.style.fontWeight = 'bold';
+        }
+
+        updateCharts();
+    }
+
+    function setChartView(view) {
+        chartView = view;
+
+        // Reset view buttons
+        const monthlyBtn = document.getElementById('viewMonthly');
+        const quarterlyBtn = document.getElementById('viewQuarterly');
+
+        if (monthlyBtn) {
+            monthlyBtn.style.background = '#ecf0f1';
+            monthlyBtn.style.color = '#2c3e50';
+            monthlyBtn.style.fontWeight = 'normal';
+        }
+        if (quarterlyBtn) {
+            quarterlyBtn.style.background = '#ecf0f1';
+            quarterlyBtn.style.color = '#2c3e50';
+            quarterlyBtn.style.fontWeight = 'normal';
+        }
+
+        // Highlight active button
+        if (view === 'monthly' && monthlyBtn) {
+            monthlyBtn.style.background = '#3498db';
+            monthlyBtn.style.color = 'white';
+            monthlyBtn.style.fontWeight = 'bold';
+        } else if (view === 'quarterly' && quarterlyBtn) {
+            quarterlyBtn.style.background = '#3498db';
+            quarterlyBtn.style.color = 'white';
+            quarterlyBtn.style.fontWeight = 'bold';
+        }
+
+        updateCharts();
     }
 
     // ============================================================================
