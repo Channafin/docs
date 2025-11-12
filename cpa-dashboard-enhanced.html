@@ -672,7 +672,7 @@
                     <canvas id="vendorChart"></canvas>
                 </div>
                 <div class="chart-container">
-                    <div class="chart-title">Risk Score Distribution</div>
+                    <div class="chart-title">🚨 Top High-Risk Vendors</div>
                     <canvas id="riskChart"></canvas>
                 </div>
             </div>
@@ -1532,33 +1532,78 @@
             });
         }
 
-        // Risk distribution
-        const riskBuckets = { 'Low (0-3)': 0, 'Medium (4-6)': 0, 'High (7-10)': 0 };
-        allData.forEach(t => {
-            if (t.riskScore <= 3) riskBuckets['Low (0-3)']++;
-            else if (t.riskScore <= 6) riskBuckets['Medium (4-6)']++;
-            else riskBuckets['High (7-10)']++;
-        });
+        // Top High-Risk Vendors
+        const vendorRiskData = Object.entries(vendorGroups)
+            .map(([vendor, data]) => ({
+                vendor: vendor,
+                avgRisk: parseFloat(data.avgRisk),
+                count: data.count,
+                totalAmount: data.totalAmount
+            }))
+            .sort((a, b) => b.avgRisk - a.avgRisk)
+            .slice(0, 10);
 
         const riskCtx = document.getElementById('riskChart');
         if (riskCtx) {
             charts.risk = new Chart(riskCtx, {
                 type: 'bar',
                 data: {
-                    labels: Object.keys(riskBuckets),
+                    labels: vendorRiskData.map(v => v.vendor.substring(0, 25)),
                     datasets: [{
-                        label: 'Transaction Count',
-                        data: Object.values(riskBuckets),
-                        backgroundColor: ['#27ae60', '#f39c12', '#e74c3c']
+                        label: 'Average Risk Score',
+                        data: vendorRiskData.map(v => v.avgRisk),
+                        backgroundColor: vendorRiskData.map(v =>
+                            v.avgRisk >= 7 ? '#e74c3c' :
+                            v.avgRisk >= 4 ? '#f39c12' : '#27ae60'
+                        )
                     }]
                 },
                 options: {
+                    indexAxis: 'y',
                     responsive: true,
                     maintainAspectRatio: true,
                     scales: {
-                        y: { beginAtZero: true }
+                        x: {
+                            beginAtZero: true,
+                            max: 10,
+                            title: {
+                                display: true,
+                                text: 'Risk Score (0-10)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                afterLabel: function(context) {
+                                    const vendor = vendorRiskData[context.dataIndex];
+                                    return [
+                                        `Transactions: ${vendor.count}`,
+                                        `Total Amount: $${Math.abs(vendor.totalAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}`
+                                    ];
+                                }
+                            }
+                        },
+                        datalabels: {
+                            display: true,
+                            anchor: 'end',
+                            align: 'right',
+                            color: '#fff',
+                            backgroundColor: function(context) {
+                                const value = context.dataset.data[context.dataIndex];
+                                return value >= 7 ? '#c0392b' : value >= 4 ? '#e67e22' : '#27ae60';
+                            },
+                            borderRadius: 3,
+                            padding: 4,
+                            font: { weight: 'bold', size: 11 },
+                            formatter: (value, context) => {
+                                const vendor = vendorRiskData[context.dataIndex];
+                                return `${value.toFixed(1)} (${vendor.count} txns)`;
+                            }
+                        }
                     }
-                }
+                },
+                plugins: [ChartDataLabels]
             });
         }
     }
