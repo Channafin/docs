@@ -1405,23 +1405,21 @@
         const volumeCtx = document.getElementById('volumeChart');
         if (volumeCtx) {
             charts.volume = new Chart(volumeCtx, {
-                type: 'line',
+                type: 'bar',
                 data: {
                     labels: sortedMonths.map(([k]) => k),
                     datasets: [{
                         label: chartView === 'annual' ? 'Annual Volume' : 'Monthly Volume',
                         data: sortedMonths.map(([, v]) => v),
-                        borderColor: currentChartFilter === 'green' ? '#27ae60' :
-                                   currentChartFilter === 'red' ? '#e74c3c' :
-                                   currentChartFilter === 'yellow' ? '#f39c12' :
-                                   currentChartFilter === 'reclass' ? '#8e44ad' : '#3498db',
-                        backgroundColor: currentChartFilter === 'green' ? 'rgba(39, 174, 96, 0.1)' :
-                                        currentChartFilter === 'red' ? 'rgba(231, 76, 60, 0.1)' :
-                                        currentChartFilter === 'yellow' ? 'rgba(243, 156, 18, 0.1)' :
-                                        currentChartFilter === 'reclass' ? 'rgba(142, 68, 173, 0.1)' :
-                                        'rgba(52, 152, 219, 0.1)',
-                        tension: 0.4,
-                        fill: true
+                        backgroundColor: currentChartFilter === 'green' ? '#27ae60' :
+                                        currentChartFilter === 'red' ? '#e74c3c' :
+                                        currentChartFilter === 'yellow' ? '#f39c12' :
+                                        currentChartFilter === 'reclass' ? '#8e44ad' : '#3498db',
+                        borderColor: currentChartFilter === 'green' ? '#229954' :
+                                   currentChartFilter === 'red' ? '#c0392b' :
+                                   currentChartFilter === 'yellow' ? '#d68910' :
+                                   currentChartFilter === 'reclass' ? '#6c3483' : '#2874a6',
+                        borderWidth: 1
                     }]
                 },
                 options: {
