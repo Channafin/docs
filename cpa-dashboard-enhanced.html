@@ -695,13 +695,14 @@
                             <th style="padding: 12px; text-align: left;">Vendor / Transaction</th>
                             <th style="padding: 12px; text-align: right;">Amount</th>
                             <th style="padding: 12px; text-align: center;">Status</th>
+                            <th style="padding: 12px; text-align: center;">Category</th>
                             <th style="padding: 12px; text-align: center;">📎 Docs</th>
                             <th style="padding: 12px;">Risk</th>
                             <th style="padding: 12px; text-align: center;">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="vendorTableBody">
-                        <tr><td colspan="7" style="text-align: center; padding: 40px; background: #f8f9fa;">
+                        <tr><td colspan="8" style="text-align: center; padding: 40px; background: #f8f9fa;">
                             <div style="font-size: 18px; margin-bottom: 10px;">📁 Load Your Transaction Data</div>
                             <div>Use the <strong>Upload File</strong> button above</div>
                         </td></tr>
@@ -871,6 +872,22 @@
                     <button onclick="downloadJEAsCSV()" style="background: var(--color-success);">📥 Download CSV</button>
                 </div>
                 <button onclick="closeJEModal()" style="background: var(--color-secondary);">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PDF Preview Modal -->
+    <div id="pdfPreviewModal" class="modal">
+        <div class="modal-content" style="max-width: 900px; max-height: 90vh;">
+            <span class="close" onclick="closePdfPreview()">&times;</span>
+            <h2 id="pdfPreviewTitle">📄 Document Preview</h2>
+            <div id="pdfPreviewInfo" style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 13px;"></div>
+            <div style="height: 600px; overflow: auto; border: 1px solid #ddd; border-radius: 8px; background: #f5f5f5;">
+                <iframe id="pdfPreviewFrame" style="width: 100%; height: 100%; border: none;"></iframe>
+            </div>
+            <div style="margin-top: 15px; display: flex; justify-content: space-between;">
+                <button onclick="downloadCurrentPdf()" style="background: var(--color-success);">📥 Download</button>
+                <button onclick="closePdfPreview()" style="background: var(--color-secondary);">Close</button>
             </div>
         </div>
     </div>
@@ -1571,6 +1588,9 @@
                         <span class="status-indicator status-${vendorStatus}"></span>
                     </td>
                     <td style="text-align: center;">
+                        <span style="font-size: 11px; color: #7f8c8d;">-</span>
+                    </td>
+                    <td style="text-align: center;">
                         ${docsCount > 0 ? '📎 ' + docsCount : '-'}
                     </td>
                     <td style="text-align: center;">
@@ -1590,6 +1610,28 @@
                 const escapedDesc = escapeHtml(trans.description.substring(0, 50));
                 const escapedNotes = review.notes ? escapeHtml(review.notes.substring(0, 100)) : '';
 
+                // Format category display
+                const categoryLabel = {
+                    'verified': '✓ Verified',
+                    'mission': '🎯 Mission',
+                    'authorized': '✅ Authorized',
+                    'suspicious': '⚠️ Suspicious',
+                    'duplicate': '📋 Duplicate',
+                    'personal': '👤 Personal'
+                };
+                const categoryDisplay = review.category ? (categoryLabel[review.category] || review.category) : '-';
+
+                // Format docs with confidence
+                let docsDisplay = '<span style="color: #bdc3c7;">-</span>';
+                if (pdfAttachments[trans.id] && pdfAttachments[trans.id].length > 0) {
+                    const attachments = pdfAttachments[trans.id];
+                    const highestScore = Math.max(...attachments.map(a => a.matchScore || 0));
+                    const confidenceColor = highestScore >= 80 ? '#27ae60' : highestScore >= 50 ? '#f39c12' : '#e74c3c';
+                    const confidenceText = highestScore >= 80 ? 'High' : highestScore >= 50 ? 'Med' : 'Low';
+                    docsDisplay = `<span style="color: #3498db; cursor: pointer;" onclick="event.stopPropagation(); previewAttachment('${trans.id}', 0)">📎${attachments.length}</span>
+                                   <br><span style="font-size: 10px; color: ${confidenceColor}; font-weight: bold;">${confidenceText} ${highestScore}%</span>`;
+                }
+
                 html += `
                     <tr class="transaction-row" data-vendor="${vendorId}" data-trans-id="${trans.id}" data-status="${trans.status}">
                         <td><input type="checkbox" class="trans-checkbox" data-trans-id="${trans.id}" onclick="event.stopPropagation(); selectTransaction('${trans.id}')"></td>
@@ -1601,10 +1643,11 @@
                             <span class="status-indicator status-${trans.status}"></span>
                             ${trans.status === 'green' ? 'Green' : trans.status === 'red' ? 'Red' : trans.status === 'yellow' ? 'Yellow' : trans.status === 'reclass' ? 'Reclass' : 'Unreviewed'}
                         </td>
+                        <td style="text-align: center; font-size: 11px; color: #5a6c7d;">
+                            ${categoryDisplay}
+                        </td>
                         <td style="text-align: center;">
-                            ${pdfAttachments[trans.id] && pdfAttachments[trans.id].length > 0 ?
-                                `<span style="color: #3498db; cursor: pointer;" onclick="event.stopPropagation(); showAttachments('${trans.id}')">📎${pdfAttachments[trans.id].length}</span>` :
-                                '<span style="color: #bdc3c7;">-</span>'}
+                            ${docsDisplay}
                         </td>
                         <td style="text-align: center;">
                             <span style="padding: 3px 8px; border-radius: 4px; font-size: 12px; background: ${
@@ -1625,7 +1668,7 @@
             });
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="7" style="text-align: center; padding: 40px;">No data loaded</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="8" style="text-align: center; padding: 40px;">No data loaded</td></tr>';
     }
 
     // ============================================================================
@@ -2074,6 +2117,71 @@
         }
     }
 
+    // ============================================================================
+    // PDF PREVIEW
+    // ============================================================================
+    let currentPdfData = null;
+
+    function previewAttachment(transId, attachmentIndex = 0) {
+        const attachments = pdfAttachments[transId];
+        if (!attachments || attachments.length === 0) {
+            alert('No attachments found');
+            return;
+        }
+
+        const trans = allData.find(t => t.id === transId);
+        const attachment = attachments[attachmentIndex];
+
+        if (!attachment) {
+            alert('Attachment not found');
+            return;
+        }
+
+        // Store current PDF data for download
+        currentPdfData = attachment;
+
+        // Set preview info
+        const confidenceColor = attachment.matchScore >= 80 ? '#27ae60' :
+                                attachment.matchScore >= 50 ? '#f39c12' : '#e74c3c';
+        const confidenceText = attachment.matchScore >= 80 ? 'High Confidence' :
+                              attachment.matchScore >= 50 ? 'Medium Confidence' : 'Low Confidence';
+
+        document.getElementById('pdfPreviewTitle').textContent = `📄 ${attachment.name}`;
+        document.getElementById('pdfPreviewInfo').innerHTML = `
+            <strong>Transaction:</strong> ${escapeHtml(trans.vendor)} - $${Math.abs(trans.amount).toLocaleString('en-US', {minimumFractionDigits: 2})} on ${trans.date.toLocaleDateString()}
+            <br>
+            <strong>Match Confidence:</strong> <span style="color: ${confidenceColor}; font-weight: bold;">${confidenceText} (${attachment.matchScore}%)</span>
+            <br>
+            <strong>Uploaded:</strong> ${new Date(attachment.uploadDate).toLocaleString()}
+            ${attachments.length > 1 ? `<br><strong>Note:</strong> ${attachments.length} files attached - showing first file. <a href="#" onclick="showAttachments('${transId}'); return false;">View all</a>` : ''}
+        `;
+
+        // Load PDF in iframe
+        const iframe = document.getElementById('pdfPreviewFrame');
+        iframe.src = attachment.data;
+
+        // Show modal
+        document.getElementById('pdfPreviewModal').style.display = 'block';
+    }
+
+    function closePdfPreview() {
+        document.getElementById('pdfPreviewModal').style.display = 'none';
+        document.getElementById('pdfPreviewFrame').src = '';
+        currentPdfData = null;
+    }
+
+    function downloadCurrentPdf() {
+        if (!currentPdfData) {
+            alert('No PDF loaded');
+            return;
+        }
+
+        const link = document.createElement('a');
+        link.href = currentPdfData.data;
+        link.download = currentPdfData.name;
+        link.click();
+    }
+
     function updateDocumentStats() {
         const matched = Object.keys(pdfAttachments).length;
         const totalTransactions = allData.length;
@@ -2487,6 +2595,9 @@
         }
         if (event.target.id === 'jeModal') {
             closeJEModal();
+        }
+        if (event.target.id === 'pdfPreviewModal') {
+            closePdfPreview();
         }
         if (event.target.id === 'shortcutsHelp') {
             toggleShortcutsHelp();
