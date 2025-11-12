@@ -1577,7 +1577,7 @@
 
             html += `
                 <tr class="vendor-row" onclick="toggleVendor('${vendorId}')" onkeydown="if(event.key==='Enter'||event.key===' ')toggleVendor('${vendorId}')" tabindex="0" role="button" aria-expanded="false" data-vendor="${vendorId}">
-                    <td><input type="checkbox" class="vendor-checkbox" onclick="event.stopPropagation()"></td>
+                    <td><input type="checkbox" class="vendor-checkbox" data-vendor-id="${vendorId}" onchange="toggleVendorCheckboxes('${vendorId}')" onclick="event.stopPropagation()"></td>
                     <td>
                         <span class="expand-icon">▶</span>
                         <strong>${escapedVendor}</strong>
@@ -1705,6 +1705,17 @@
 
     function selectAllVisible() {
         document.querySelectorAll('.transaction-row.visible .trans-checkbox').forEach(cb => cb.checked = true);
+    }
+
+    function toggleVendorCheckboxes(vendorId) {
+        const vendorCheckbox = document.querySelector(`.vendor-checkbox[data-vendor-id="${vendorId}"]`);
+        const isChecked = vendorCheckbox.checked;
+
+        // Select all transaction checkboxes for this vendor
+        const transactionCheckboxes = document.querySelectorAll(`.transaction-row[data-vendor="${vendorId}"] .trans-checkbox`);
+        transactionCheckboxes.forEach(cb => {
+            cb.checked = isChecked;
+        });
     }
 
     // ============================================================================
