@@ -821,6 +821,17 @@
                 </div>
             </div>
 
+            <div class="form-group">
+                <label>📎 Supporting Documentation</label>
+                <div id="modalAttachmentList" style="margin-bottom: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; min-height: 40px;">
+                    <em style="color: #95a5a6;">No documents attached</em>
+                </div>
+                <input type="file" id="modalPdfUpload" accept=".pdf" multiple style="display: none;">
+                <button type="button" onclick="document.getElementById('modalPdfUpload').click()" style="background: var(--color-info); width: 100%;">
+                    📁 Upload PDF Documents
+                </button>
+            </div>
+
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
                 <button onclick="closeModal()" style="background: var(--color-secondary);">Cancel</button>
                 <button onclick="saveReview()">💾 Save Review</button>
@@ -1018,6 +1029,12 @@
         const bulkUpload = document.getElementById('bulkPdfUpload');
         if (bulkUpload) {
             bulkUpload.addEventListener('change', handleBulkPdfUpload);
+        }
+
+        // Set up modal PDF upload handler
+        const modalUpload = document.getElementById('modalPdfUpload');
+        if (modalUpload) {
+            modalUpload.addEventListener('change', handleModalPdfUpload);
         }
 
         // Character counter for notes
@@ -2017,7 +2034,42 @@
         document.getElementById('reviewNotes').value = review.notes || '';
         document.getElementById('charCount').textContent = (review.notes || '').length;
 
+        // Show existing attachments
+        updateModalAttachmentList(transId);
+
         document.getElementById('reviewModal').style.display = 'block';
+    }
+
+    function updateModalAttachmentList(transId) {
+        const attachmentDiv = document.getElementById('modalAttachmentList');
+        const attachments = pdfAttachments[transId] || [];
+
+        if (attachments.length === 0) {
+            attachmentDiv.innerHTML = '<em style="color: #95a5a6;">No documents attached</em>';
+            return;
+        }
+
+        let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+        attachments.forEach((att, idx) => {
+            const confidenceColor = att.matchScore >= 80 ? '#27ae60' : att.matchScore >= 50 ? '#f39c12' : '#e74c3c';
+            const confidenceText = att.matchScore >= 80 ? 'High' : att.matchScore >= 50 ? 'Med' : 'Low';
+
+            html += `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: white; border-radius: 4px; border: 1px solid #e0e0e0;">
+                    <div style="flex: 1;">
+                        <strong style="color: #2c3e50;">📄 ${escapeHtml(att.name)}</strong>
+                        ${att.matchScore ? `<span style="margin-left: 10px; font-size: 11px; color: ${confidenceColor}; font-weight: bold;">${confidenceText} ${att.matchScore}%</span>` : ''}
+                        <div style="font-size: 11px; color: #7f8c8d;">Uploaded: ${new Date(att.uploadDate).toLocaleDateString()}</div>
+                    </div>
+                    <div style="display: flex; gap: 5px;">
+                        <button type="button" onclick="previewAttachment('${transId}', ${idx}); event.stopPropagation();" style="padding: 5px 10px; font-size: 12px; background: var(--color-info);">👁️ View</button>
+                        <button type="button" onclick="deleteAttachment('${transId}', ${idx}); event.stopPropagation();" style="padding: 5px 10px; font-size: 12px; background: var(--color-danger);">🗑️</button>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        attachmentDiv.innerHTML = html;
     }
 
     function closeModal() {
@@ -2188,6 +2240,77 @@
                 link.click();
             });
         }
+    }
+
+    // ============================================================================
+    // MODAL PDF UPLOAD
+    // ============================================================================
+    async function handleModalPdfUpload(event) {
+        const files = event.target.files;
+        if (!files || files.length === 0 || !currentTransactionId) return;
+
+        try {
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+
+                // Convert to base64
+                const base64 = await fileToBase64(file);
+
+                // Initialize attachment array if needed
+                if (!pdfAttachments[currentTransactionId]) {
+                    pdfAttachments[currentTransactionId] = [];
+                }
+
+                // Add attachment (no auto-matching, manual upload = 100% confidence)
+                pdfAttachments[currentTransactionId].push({
+                    name: file.name,
+                    data: base64,
+                    uploadDate: new Date().toISOString(),
+                    matchScore: 100 // Manual upload = perfect match
+                });
+            }
+
+            // Save to localStorage
+            safeLocalStorageSet('pdfAttachments', pdfAttachments);
+
+            // Update the attachment list display
+            updateModalAttachmentList(currentTransactionId);
+
+            // Update vendor table to show new attachment count
+            updateVendorTable();
+            updateDocumentStats();
+
+            // Clear the file input
+            event.target.value = '';
+
+            alert(`✅ ${files.length} document(s) uploaded successfully`);
+        } catch (err) {
+            console.error('PDF upload error:', err);
+            alert('❌ Error uploading PDF. Please try again.');
+        }
+    }
+
+    function deleteAttachment(transId, attachmentIndex) {
+        if (!confirm('Delete this document?')) return;
+
+        const attachments = pdfAttachments[transId];
+        if (!attachments || attachmentIndex >= attachments.length) return;
+
+        // Remove the attachment
+        attachments.splice(attachmentIndex, 1);
+
+        // If no more attachments, remove the entry
+        if (attachments.length === 0) {
+            delete pdfAttachments[transId];
+        }
+
+        // Save to localStorage
+        safeLocalStorageSet('pdfAttachments', pdfAttachments);
+
+        // Update displays
+        updateModalAttachmentList(transId);
+        updateVendorTable();
+        updateDocumentStats();
     }
 
     // ============================================================================
