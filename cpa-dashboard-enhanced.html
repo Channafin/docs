@@ -635,7 +635,6 @@
                 </div>
                 <button onclick="updateDashboard()">🔄 Refresh Analysis</button>
                 <button onclick="toggleShortcutsHelp()">⌨️ Keyboard Shortcuts</button>
-                <button onclick="showStatusByYearOverlay()" style="background: #9b59b6; color: white;">📊 Status by Year</button>
             </div>
 
             <!-- Chart Filters -->
@@ -661,7 +660,13 @@
 
             <div class="charts-grid">
                 <div class="chart-container">
-                    <div class="chart-title">Review Status Distribution</div>
+                    <div class="chart-title" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>Review Status Distribution</span>
+                        <div style="display: flex; gap: 5px;">
+                            <button id="statusViewCurrent" onclick="toggleStatusView('current')" style="padding: 4px 8px; font-size: 11px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Current</button>
+                            <button id="statusViewYearly" onclick="toggleStatusView('yearly')" style="padding: 4px 8px; font-size: 11px; background: #ecf0f1; color: #2c3e50; border: none; border-radius: 4px; cursor: pointer;">By Year</button>
+                        </div>
+                    </div>
                     <canvas id="statusChart"></canvas>
                 </div>
                 <div class="chart-container">
@@ -920,19 +925,6 @@
         </div>
     </div>
 
-    <!-- Status by Year Overlay Modal -->
-    <div id="statusByYearModal" class="modal">
-        <div class="modal-content" style="max-width: 1200px; max-height: 90vh;">
-            <span class="close" onclick="closeStatusByYearOverlay()">&times;</span>
-            <h2>📊 Transaction Status Distribution by Year</h2>
-            <p style="color: #7f8c8d; margin: 10px 0;">Shows all transaction data grouped by year and status</p>
-            <div style="height: 500px; margin: 20px 0;">
-                <canvas id="statusByYearChart"></canvas>
-            </div>
-            <button onclick="closeStatusByYearOverlay()" style="background: var(--color-secondary);">Close</button>
-        </div>
-    </div>
-
     <!-- Group Management Modal -->
     <div id="groupManagementModal" class="modal">
         <div class="modal-content" style="max-width: 700px;">
@@ -1125,6 +1117,7 @@
     let vendorGroupAssignments = {}; // {vendorName: 'groupId'}
     let currentGroupFilter = 'all';
     let vendorNotes = {}; // {vendorName: 'note text'}
+    let statusView = 'current'; // 'current' or 'yearly'
 
     // ============================================================================
     // INITIALIZATION
@@ -1465,50 +1458,156 @@
         }
 
         // Status chart
-        const statusCounts = {
-            'Mission Related': filteredData.filter(t => t.status === 'green').length,
-            'Non-mission': filteredData.filter(t => t.status === 'red').length,
-            'Needs Review': filteredData.filter(t => t.status === 'yellow').length,
-            'Reclass to Revenue': filteredData.filter(t => t.status === 'reclass').length,
-            'Unreviewed': filteredData.filter(t => t.status === 'gray').length
-        };
-
         const statusCtx = document.getElementById('statusChart');
         if (statusCtx) {
-            const totalCount = Object.values(statusCounts).reduce((a, b) => a + b, 0);
-            charts.status = new Chart(statusCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: Object.keys(statusCounts),
-                    datasets: [{
-                        data: Object.values(statusCounts),
-                        backgroundColor: ['#27ae60', '#e74c3c', '#f39c12', '#8e44ad', '#95a5a6'],
-                        borderWidth: 2,
-                        borderColor: '#fff'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: { position: 'right' },
-                        datalabels: {
-                            display: true,
-                            color: '#fff',
-                            font: {
-                                weight: 'bold',
-                                size: 12
-                            },
-                            formatter: (value, context) => {
-                                if (value === 0) return '';
-                                const percentage = totalCount > 0 ? ((value / totalCount) * 100).toFixed(1) : 0;
-                                return `${value}\n(${percentage}%)`;
+            if (statusView === 'current') {
+                // Current view - doughnut chart
+                const statusCounts = {
+                    'Mission Related': filteredData.filter(t => t.status === 'green').length,
+                    'Non-mission': filteredData.filter(t => t.status === 'red').length,
+                    'Needs Review': filteredData.filter(t => t.status === 'yellow').length,
+                    'Reclass to Revenue': filteredData.filter(t => t.status === 'reclass').length,
+                    'Unreviewed': filteredData.filter(t => t.status === 'gray').length
+                };
+
+                const totalCount = Object.values(statusCounts).reduce((a, b) => a + b, 0);
+                charts.status = new Chart(statusCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: Object.keys(statusCounts),
+                        datasets: [{
+                            data: Object.values(statusCounts),
+                            backgroundColor: ['#27ae60', '#e74c3c', '#f39c12', '#8e44ad', '#95a5a6'],
+                            borderWidth: 2,
+                            borderColor: '#fff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: { position: 'right' },
+                            datalabels: {
+                                display: true,
+                                color: '#fff',
+                                font: {
+                                    weight: 'bold',
+                                    size: 12
+                                },
+                                formatter: (value, context) => {
+                                    if (value === 0) return '';
+                                    const percentage = totalCount > 0 ? ((value / totalCount) * 100).toFixed(1) : 0;
+                                    return `${value}\n(${percentage}%)`;
+                                }
                             }
                         }
+                    },
+                    plugins: [ChartDataLabels]
+                });
+            } else {
+                // Yearly view - grouped bar chart
+                const yearlyData = {};
+
+                filteredData.forEach(trans => {
+                    const year = trans.date.getFullYear();
+                    if (!yearlyData[year]) {
+                        yearlyData[year] = {
+                            green: 0,
+                            red: 0,
+                            yellow: 0,
+                            gray: 0,
+                            reclass: 0
+                        };
                     }
-                },
-                plugins: [ChartDataLabels]
-            });
+                    yearlyData[year][trans.status]++;
+                });
+
+                const years = Object.keys(yearlyData).sort();
+
+                charts.status = new Chart(statusCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: years,
+                        datasets: [
+                            {
+                                label: 'Mission (Green)',
+                                data: years.map(y => yearlyData[y].green),
+                                backgroundColor: '#27ae60',
+                                borderColor: '#229954',
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Non-Mission (Red)',
+                                data: years.map(y => yearlyData[y].red),
+                                backgroundColor: '#e74c3c',
+                                borderColor: '#c0392b',
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Review (Yellow)',
+                                data: years.map(y => yearlyData[y].yellow),
+                                backgroundColor: '#f39c12',
+                                borderColor: '#d68910',
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Reclass (Purple)',
+                                data: years.map(y => yearlyData[y].reclass),
+                                backgroundColor: '#8e44ad',
+                                borderColor: '#6c3483',
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Unreviewed (Gray)',
+                                data: years.map(y => yearlyData[y].gray),
+                                backgroundColor: '#95a5a6',
+                                borderColor: '#7f8c8d',
+                                borderWidth: 1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top'
+                            },
+                            datalabels: {
+                                display: true,
+                                color: 'white',
+                                font: {
+                                    weight: 'bold',
+                                    size: 11
+                                },
+                                formatter: (value) => {
+                                    return value > 0 ? value : '';
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Year'
+                                }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Number of Transactions'
+                                },
+                                ticks: {
+                                    precision: 0
+                                }
+                            }
+                        }
+                    },
+                    plugins: [ChartDataLabels]
+                });
+            }
         }
 
         // Volume chart with vendor tracking
@@ -2714,141 +2813,31 @@
     }
 
     // ============================================================================
-    // STATUS BY YEAR OVERLAY
+    // STATUS VIEW TOGGLE
     // ============================================================================
-    let statusByYearChartInstance = null;
+    function toggleStatusView(view) {
+        statusView = view;
 
-    function showStatusByYearOverlay() {
-        // Aggregate data by year and status
-        const yearlyData = {};
+        // Update button styles
+        const currentBtn = document.getElementById('statusViewCurrent');
+        const yearlyBtn = document.getElementById('statusViewYearly');
 
-        allData.forEach(trans => {
-            const year = trans.date.getFullYear();
-            if (!yearlyData[year]) {
-                yearlyData[year] = {
-                    green: 0,
-                    red: 0,
-                    yellow: 0,
-                    gray: 0,
-                    reclass: 0
-                };
+        if (currentBtn && yearlyBtn) {
+            if (view === 'current') {
+                currentBtn.style.background = '#3498db';
+                currentBtn.style.color = 'white';
+                yearlyBtn.style.background = '#ecf0f1';
+                yearlyBtn.style.color = '#2c3e50';
+            } else {
+                currentBtn.style.background = '#ecf0f1';
+                currentBtn.style.color = '#2c3e50';
+                yearlyBtn.style.background = '#3498db';
+                yearlyBtn.style.color = 'white';
             }
-            yearlyData[year][trans.status]++;
-        });
-
-        // Sort years
-        const years = Object.keys(yearlyData).sort();
-
-        // Prepare datasets for each status
-        const datasets = [
-            {
-                label: 'Mission (Green)',
-                data: years.map(y => yearlyData[y].green),
-                backgroundColor: '#27ae60',
-                borderColor: '#229954',
-                borderWidth: 1
-            },
-            {
-                label: 'Non-Mission (Red)',
-                data: years.map(y => yearlyData[y].red),
-                backgroundColor: '#e74c3c',
-                borderColor: '#c0392b',
-                borderWidth: 1
-            },
-            {
-                label: 'Review (Yellow)',
-                data: years.map(y => yearlyData[y].yellow),
-                backgroundColor: '#f39c12',
-                borderColor: '#d68910',
-                borderWidth: 1
-            },
-            {
-                label: 'Reclass to Revenue (Purple)',
-                data: years.map(y => yearlyData[y].reclass),
-                backgroundColor: '#8e44ad',
-                borderColor: '#6c3483',
-                borderWidth: 1
-            },
-            {
-                label: 'Unreviewed (Gray)',
-                data: years.map(y => yearlyData[y].gray),
-                backgroundColor: '#95a5a6',
-                borderColor: '#7f8c8d',
-                borderWidth: 1
-            }
-        ];
-
-        // Show modal
-        document.getElementById('statusByYearModal').style.display = 'flex';
-
-        // Destroy existing chart if it exists
-        if (statusByYearChartInstance) {
-            statusByYearChartInstance.destroy();
         }
 
-        // Create chart
-        const ctx = document.getElementById('statusByYearChart');
-        statusByYearChartInstance = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: years,
-                datasets: datasets
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: false
-                    },
-                    legend: {
-                        display: true,
-                        position: 'top'
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false
-                    },
-                    datalabels: {
-                        display: true,
-                        color: 'white',
-                        font: {
-                            weight: 'bold',
-                            size: 11
-                        },
-                        formatter: (value) => {
-                            return value > 0 ? value : '';
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        stacked: true,
-                        title: {
-                            display: true,
-                            text: 'Year'
-                        }
-                    },
-                    y: {
-                        stacked: true,
-                        title: {
-                            display: true,
-                            text: 'Number of Transactions'
-                        },
-                        beginAtZero: true
-                    }
-                }
-            },
-            plugins: [ChartDataLabels]
-        });
-    }
-
-    function closeStatusByYearOverlay() {
-        document.getElementById('statusByYearModal').style.display = 'none';
-        if (statusByYearChartInstance) {
-            statusByYearChartInstance.destroy();
-            statusByYearChartInstance = null;
-        }
+        // Redraw charts
+        updateCharts();
     }
 
     // ============================================================================
