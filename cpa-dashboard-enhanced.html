@@ -697,8 +697,8 @@
                             <th style="padding: 12px; text-align: right;">Amount</th>
                             <th style="padding: 12px; text-align: center;">Status</th>
                             <th style="padding: 12px; text-align: center;">Category</th>
+                            <th style="padding: 12px; text-align: left;">📝 Notes</th>
                             <th style="padding: 12px; text-align: center;">📎 Docs</th>
-                            <th style="padding: 12px;">Risk</th>
                             <th style="padding: 12px; text-align: center;">Actions</th>
                         </tr>
                     </thead>
@@ -1281,7 +1281,7 @@
             }
 
             vendorGroups[trans.vendor].transactions.push(trans);
-            vendorGroups[trans.vendor].totalAmount += trans.amount;
+            vendorGroups[trans.vendor].totalAmount += Math.abs(trans.amount); // Use absolute value for total activity
             vendorGroups[trans.vendor].count++;
             vendorGroups[trans.vendor].statuses[trans.status]++;
         });
@@ -1691,14 +1691,10 @@
                         <span style="font-size: 11px; color: #7f8c8d;">-</span>
                     </td>
                     <td style="text-align: center;">
-                        ${docsCount > 0 ? '📎 ' + docsCount : '-'}
+                        <span style="font-size: 11px; color: #7f8c8d;">-</span>
                     </td>
                     <td style="text-align: center;">
-                        <span style="padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; background: ${
-                            vendorData.avgRisk >= 7 ? '#fee' : vendorData.avgRisk >= 4 ? '#fff3cd' : '#d4edda'
-                        }; color: ${
-                            vendorData.avgRisk >= 7 ? '#c0392b' : vendorData.avgRisk >= 4 ? '#856404' : '#155724'
-                        };">${vendorData.avgRisk}</span>
+                        ${docsCount > 0 ? '📎 ' + docsCount : '-'}
                     </td>
                     <td></td>
                 </tr>
@@ -1752,13 +1748,11 @@
                         <td style="text-align: center; font-size: 11px; color: #5a6c7d;">
                             ${categoryDisplay}
                         </td>
-                        <td style="text-align: center;">
-                            ${docsDisplay}
+                        <td style="text-align: left; font-size: 11px; color: #34495e; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 8px;" title="${escapedNotes}">
+                            ${escapedNotes || '<span style="color: #bdc3c7;">-</span>'}
                         </td>
                         <td style="text-align: center;">
-                            <span style="padding: 3px 8px; border-radius: 4px; font-size: 12px; background: ${
-                                trans.riskScore >= 7 ? '#fee' : trans.riskScore >= 4 ? '#fff3cd' : '#d4edda'
-                            };">${trans.riskScore}</span>
+                            ${docsDisplay}
                         </td>
                         <td style="text-align: center;">
                             <div class="action-buttons">
