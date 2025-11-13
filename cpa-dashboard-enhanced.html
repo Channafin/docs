@@ -1728,8 +1728,14 @@
                     const highestScore = Math.max(...attachments.map(a => a.matchScore || 0));
                     const confidenceColor = highestScore >= 80 ? '#27ae60' : highestScore >= 50 ? '#f39c12' : '#e74c3c';
                     const confidenceText = highestScore >= 80 ? 'High' : highestScore >= 50 ? 'Med' : 'Low';
-                    docsDisplay = `<span style="color: #3498db; cursor: pointer;" onclick="event.stopPropagation(); previewAttachment('${trans.id}', 0)">📎${attachments.length}</span>
-                                   <br><span style="font-size: 10px; color: ${confidenceColor}; font-weight: bold;">${confidenceText} ${highestScore}%</span>`;
+
+                    // Get match details for tooltip
+                    const bestMatch = attachments.find(a => a.matchScore === highestScore);
+                    const tooltipText = bestMatch && bestMatch.matchDetails ?
+                        `Match: ${bestMatch.matchDetails}` : 'Click to preview document';
+
+                    docsDisplay = `<span style="color: #3498db; cursor: pointer;" onclick="event.stopPropagation(); previewAttachment('${trans.id}', 0)" title="${escapeHtml(tooltipText)}">📎${attachments.length}</span>
+                                   <br><span style="font-size: 10px; color: ${confidenceColor}; font-weight: bold;" title="${escapeHtml(tooltipText)}">${confidenceText} ${highestScore}%</span>`;
                 }
 
                 html += `
@@ -1756,10 +1762,10 @@
                         </td>
                         <td style="text-align: center;">
                             <div class="action-buttons">
-                                <button class="btn-small btn-green" onclick="quickStatus('${trans.id}', 'green', event)">✅</button>
-                                <button class="btn-small btn-red" onclick="quickStatus('${trans.id}', 'red', event)">❌</button>
-                                <button class="btn-small btn-yellow" onclick="quickStatus('${trans.id}', 'yellow', event)">⚠️</button>
-                                <button class="btn-small" onclick="openReviewModal('${trans.id}', event)">📝</button>
+                                <button class="btn-small btn-green" onclick="quickStatus('${trans.id}', 'green', event)" title="Mark as Mission (Green)">✅</button>
+                                <button class="btn-small btn-red" onclick="quickStatus('${trans.id}', 'red', event)" title="Mark as Non-Mission (Red)">❌</button>
+                                <button class="btn-small btn-yellow" onclick="quickStatus('${trans.id}', 'yellow', event)" title="Mark for Review (Yellow)">⚠️</button>
+                                <button class="btn-small" onclick="openReviewModal('${trans.id}', event)" title="Open Full Review Form">📝</button>
                                 <button class="btn-small" onclick="openJEModal('${trans.id}', event)" style="background: var(--color-info);" title="Generate Journal Entry">🧾</button>
                             </div>
                         </td>
@@ -2081,6 +2087,7 @@
                         <strong style="color: #2c3e50;">📄 ${escapeHtml(att.name)}</strong>
                         ${att.matchScore ? `<span style="margin-left: 10px; font-size: 11px; color: ${confidenceColor}; font-weight: bold;">${confidenceText} ${att.matchScore}%</span>` : ''}
                         <div style="font-size: 11px; color: #7f8c8d;">Uploaded: ${new Date(att.uploadDate).toLocaleDateString()}</div>
+                        ${att.matchDetails ? `<div style="font-size: 10px; color: #95a5a6; font-style: italic; margin-top: 3px;">Match: ${escapeHtml(att.matchDetails)}</div>` : ''}
                     </div>
                     <div style="display: flex; gap: 5px;">
                         <button type="button" onclick="previewAttachment('${transId}', ${idx}); event.stopPropagation();" style="padding: 5px 10px; font-size: 12px; background: var(--color-info);">👁️ View</button>
@@ -2163,7 +2170,8 @@
                         name: file.name,
                         data: base64,
                         uploadDate: new Date().toISOString(),
-                        matchScore: matchResult.score
+                        matchScore: matchResult.score,
+                        matchDetails: matchResult.details
                     });
                 }
             } catch (err) {
@@ -2193,38 +2201,136 @@
 
     async function matchPdfToTransaction(file, base64Data) {
         const fileName = file.name.toLowerCase().replace('.pdf', '');
+        const cleanFileName = fileName.replace(/[^a-z0-9]/g, '');
 
         let bestMatch = null;
         let bestScore = 0;
+        let matchDetails = [];
 
         allData.forEach(trans => {
             let score = 0;
-            const vendorLower = trans.vendor.toLowerCase().replace(/[^a-z0-9]/g, '');
-            const cleanFileName = fileName.replace(/[^a-z0-9]/g, '');
+            let details = [];
 
-            // Vendor name match
-            if (cleanFileName.includes(vendorLower)) {
+            // ===== VENDOR NAME MATCHING (up to 50 points) =====
+            const vendorLower = trans.vendor.toLowerCase();
+            const vendorClean = vendorLower.replace(/[^a-z0-9]/g, '');
+            const vendorWords = vendorLower.split(/\s+/).filter(w => w.length > 2); // Words longer than 2 chars
+
+            // Exact vendor name match (full 50 points)
+            if (cleanFileName.includes(vendorClean) && vendorClean.length > 3) {
                 score += 50;
+                details.push('Exact vendor match');
+            }
+            // Partial vendor match - check if vendor is in original filename with spaces/dashes
+            else if (fileName.includes(vendorLower) || fileName.replace(/[-_]/g, ' ').includes(vendorLower)) {
+                score += 45;
+                details.push('Vendor name match');
+            }
+            // Check individual vendor words (significant words)
+            else {
+                let wordMatches = 0;
+                vendorWords.forEach(word => {
+                    if (cleanFileName.includes(word.replace(/[^a-z0-9]/g, ''))) {
+                        wordMatches++;
+                    }
+                });
+                if (wordMatches > 0) {
+                    const wordScore = Math.min(40, wordMatches * 15); // 15 points per word, max 40
+                    score += wordScore;
+                    details.push(`${wordMatches} vendor word(s) matched`);
+                }
             }
 
-            // Amount match
-            const amountStr = Math.abs(trans.amount).toFixed(0);
-            if (cleanFileName.includes(amountStr)) {
-                score += 30;
+            // ===== AMOUNT MATCHING (up to 35 points) =====
+            const absAmount = Math.abs(trans.amount);
+            const amountWhole = Math.floor(absAmount);
+            const amountStr = absAmount.toFixed(2);
+            const amountNoDot = amountStr.replace('.', '');
+            const amountWithComma = absAmount.toLocaleString('en-US', {minimumFractionDigits: 2});
+
+            // Exact amount with decimals
+            if (cleanFileName.includes(amountNoDot) || fileName.includes(amountStr)) {
+                score += 35;
+                details.push('Exact amount match');
+            }
+            // Amount with comma format
+            else if (fileName.includes(amountWithComma)) {
+                score += 35;
+                details.push('Amount match');
+            }
+            // Whole dollar amount
+            else if (cleanFileName.includes(String(amountWhole)) && amountWhole > 99) {
+                score += 25;
+                details.push('Rounded amount match');
             }
 
-            // Date match
+            // ===== DATE MATCHING (up to 25 points) =====
             const month = String(trans.date.getMonth() + 1).padStart(2, '0');
             const day = String(trans.date.getDate()).padStart(2, '0');
             const year = String(trans.date.getFullYear());
+            const shortYear = year.substring(2);
 
-            if (cleanFileName.includes(month + day) || cleanFileName.includes(year)) {
-                score += 20;
+            const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+            const monthName = monthNames[trans.date.getMonth()];
+
+            // Common date formats
+            const dateFormats = [
+                year + month + day,        // YYYYMMDD
+                month + day + year,        // MMDDYYYY
+                year + '-' + month + '-' + day,  // YYYY-MM-DD
+                month + '-' + day + '-' + year,  // MM-DD-YYYY
+                month + day + shortYear,   // MMDDYY
+                day + month + year,        // DDMMYYYY
+                monthName + day,           // MonDD (e.g., jan15)
+                monthName + year           // MonYYYY (e.g., jan2023)
+            ];
+
+            let dateMatched = false;
+            for (const format of dateFormats) {
+                if (cleanFileName.includes(format.replace(/[^a-z0-9]/g, '')) ||
+                    fileName.includes(format)) {
+                    score += 25;
+                    details.push('Full date match');
+                    dateMatched = true;
+                    break;
+                }
             }
 
-            if (score > bestScore && score >= 50) {
+            // Partial date matching (year + month, or just year for recent transactions)
+            if (!dateMatched) {
+                if (cleanFileName.includes(year + month) || fileName.includes(year + '-' + month)) {
+                    score += 15;
+                    details.push('Year+month match');
+                } else if (cleanFileName.includes(year)) {
+                    score += 8;
+                    details.push('Year match');
+                }
+            }
+
+            // ===== DESCRIPTION MATCHING (up to 15 points) =====
+            const descWords = trans.description.toLowerCase()
+                .replace(/[^a-z0-9\s]/g, ' ')
+                .split(/\s+/)
+                .filter(w => w.length > 4); // Only significant words
+
+            let descMatches = 0;
+            descWords.forEach(word => {
+                if (cleanFileName.includes(word)) {
+                    descMatches++;
+                }
+            });
+
+            if (descMatches > 0) {
+                const descScore = Math.min(15, descMatches * 5);
+                score += descScore;
+                details.push(`${descMatches} description word(s) matched`);
+            }
+
+            // Track best match (lowered threshold from 50 to 40)
+            if (score > bestScore && score >= 40) {
                 bestScore = score;
                 bestMatch = trans;
+                matchDetails = details;
             }
         });
 
@@ -2234,7 +2340,8 @@
                 transactionId: bestMatch.id,
                 vendor: bestMatch.vendor,
                 amount: bestMatch.amount,
-                score: bestScore
+                score: Math.min(100, bestScore), // Cap at 100%
+                details: matchDetails.join(', ')
             };
         }
 
@@ -2287,7 +2394,8 @@
                     name: file.name,
                     data: base64,
                     uploadDate: new Date().toISOString(),
-                    matchScore: 100 // Manual upload = perfect match
+                    matchScore: 100, // Manual upload = perfect match
+                    matchDetails: 'Manually uploaded to this transaction'
                 });
             }
 
