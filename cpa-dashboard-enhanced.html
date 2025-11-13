@@ -683,9 +683,21 @@
         <div id="review-tab" class="tab-content">
             <div class="controls">
                 <input type="text" id="vendorSearch" placeholder="🔍 Search vendors..." style="flex: 1;">
+                <button onclick="openGroupManagementModal()" style="background: #9b59b6; color: white;">🏷️ Manage Groups</button>
                 <button onclick="selectAllVisible()">☑️ Select All</button>
                 <button onclick="batchAccept()">✅ Batch Accept</button>
                 <button onclick="batchReject()">❌ Batch Reject</button>
+            </div>
+
+            <!-- Group Filters -->
+            <div style="background: white; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <strong style="color: #34495e;">Filter by Group:</strong>
+                    <div id="groupFilterButtons">
+                        <button id="groupFilterAll" onclick="filterByGroup('all')" style="background: #3498db; color: white; font-weight: bold;">All Groups</button>
+                        <button id="groupFilterUngrouped" onclick="filterByGroup('ungrouped')" style="background: #95a5a6;">Ungrouped</button>
+                    </div>
+                </div>
             </div>
 
             <div style="overflow-x: auto;">
@@ -694,6 +706,7 @@
                         <tr style="background: #34495e; color: white;">
                             <th style="padding: 12px; text-align: left;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()"></th>
                             <th style="padding: 12px; text-align: left;">Vendor / Transaction</th>
+                            <th style="padding: 12px; text-align: center;">🏷️ Group</th>
                             <th style="padding: 12px; text-align: right;">Amount</th>
                             <th style="padding: 12px; text-align: center;">Status</th>
                             <th style="padding: 12px; text-align: center;">Category</th>
@@ -703,7 +716,7 @@
                         </tr>
                     </thead>
                     <tbody id="vendorTableBody">
-                        <tr><td colspan="8" style="text-align: center; padding: 40px; background: #f8f9fa;">
+                        <tr><td colspan="9" style="text-align: center; padding: 40px; background: #f8f9fa;">
                             <div style="font-size: 18px; margin-bottom: 10px;">📁 Load Your Transaction Data</div>
                             <div>Use the <strong>Upload File</strong> button above</div>
                         </td></tr>
@@ -917,6 +930,35 @@
         </div>
     </div>
 
+    <!-- Group Management Modal -->
+    <div id="groupManagementModal" class="modal">
+        <div class="modal-content" style="max-width: 700px;">
+            <span class="close" onclick="closeGroupManagementModal()">&times;</span>
+            <h2>🏷️ Manage Vendor Groups</h2>
+            <p style="color: #7f8c8d; margin: 10px 0;">Create groups to categorize your vendors (e.g., Office Supplies, Travel, Contractors)</p>
+
+            <div style="margin: 20px 0;">
+                <h3 style="color: #34495e; font-size: 16px; margin-bottom: 10px;">Create New Group</h3>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="text" id="newGroupName" placeholder="Group name (e.g., Office Supplies)" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    <input type="color" id="newGroupColor" value="#3498db" title="Group color" style="width: 50px; height: 38px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">
+                    <button onclick="createGroup()" style="background: var(--color-success); white-space: nowrap;">➕ Add Group</button>
+                </div>
+            </div>
+
+            <div style="margin: 20px 0;">
+                <h3 style="color: #34495e; font-size: 16px; margin-bottom: 10px;">Existing Groups</h3>
+                <div id="groupsList" style="max-height: 300px; overflow-y: auto;">
+                    <em style="color: #95a5a6;">No groups created yet</em>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button onclick="closeGroupManagementModal()" style="background: var(--color-secondary);">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script>
     // ============================================================================
     // GLOBAL ERROR HANDLER
@@ -1031,6 +1073,9 @@
     let currentChartFilter = 'all';
     let currentTypeFilter = 'all';
     let periodVendorData = {};
+    let vendorGroupDefinitions = {}; // {groupId: {name: 'Travel', color: '#3498db'}}
+    let vendorGroupAssignments = {}; // {vendorName: 'groupId'}
+    let currentGroupFilter = 'all';
 
     // ============================================================================
     // INITIALIZATION
@@ -1038,6 +1083,8 @@
     window.onload = function() {
         reviewState = safeLocalStorageGet('cpaForensicReviewState', {});
         pdfAttachments = safeLocalStorageGet('pdfAttachments', {});
+        loadVendorGroupsFromStorage();
+        updateGroupFilterButtons();
 
         // Set up PDF upload handler
         const bulkUpload = document.getElementById('bulkPdfUpload');
@@ -1656,6 +1703,17 @@
             .sort((a, b) => Math.abs(b[1].totalAmount) - Math.abs(a[1].totalAmount));
 
         sortedVendors.forEach(([vendorName, vendorData]) => {
+            // Apply group filter
+            const vendorGroup = vendorGroupAssignments[vendorName];
+            if (currentGroupFilter !== 'all') {
+                if (currentGroupFilter === 'ungrouped' && vendorGroup) {
+                    return; // Skip grouped vendors when showing ungrouped
+                }
+                if (currentGroupFilter !== 'ungrouped' && vendorGroup !== currentGroupFilter) {
+                    return; // Skip vendors not in the selected group
+                }
+            }
+
             const vendorId = 'vendor_' + vendorName.replace(/[^a-zA-Z0-9]/g, '_');
             const escapedVendor = escapeHtml(vendorName);
 
@@ -1671,6 +1729,17 @@
                 return sum + (pdfAttachments[t.id] ? pdfAttachments[t.id].length : 0);
             }, 0);
 
+            // Get vendor group info
+            const assignedGroupId = vendorGroupAssignments[vendorName];
+            const assignedGroup = assignedGroupId ? vendorGroupDefinitions[assignedGroupId] : null;
+
+            // Build group dropdown options
+            let groupOptions = '<option value="">Ungrouped</option>';
+            Object.entries(vendorGroupDefinitions).forEach(([gId, g]) => {
+                const selected = gId === assignedGroupId ? 'selected' : '';
+                groupOptions += `<option value="${gId}" ${selected}>${escapeHtml(g.name)}</option>`;
+            });
+
             html += `
                 <tr class="vendor-row" onclick="toggleVendor('${vendorId}')" onkeydown="if(event.key==='Enter'||event.key===' ')toggleVendor('${vendorId}')" tabindex="0" role="button" aria-expanded="false" data-vendor="${vendorId}">
                     <td><input type="checkbox" class="vendor-checkbox" data-vendor-id="${vendorId}" onchange="toggleVendorCheckboxes('${vendorId}')" onclick="event.stopPropagation()"></td>
@@ -1680,6 +1749,11 @@
                         <span style="color: #95a5a6; font-size: 12px; margin-left: 10px;">
                             (${vendorData.count} transactions)
                         </span>
+                    </td>
+                    <td style="text-align: center;" onclick="event.stopPropagation()">
+                        <select onchange="assignVendorToGroup('${vendorName.replace(/'/g, "\\'")}', this.value)" style="padding: 4px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; background: ${assignedGroup ? assignedGroup.color + '22' : 'white'}; cursor: pointer;">
+                            ${groupOptions}
+                        </select>
                     </td>
                     <td style="text-align: right; font-weight: 600;">
                         $${vendorData.totalAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}
@@ -1738,6 +1812,7 @@
                     <tr class="transaction-row" data-vendor="${vendorId}" data-trans-id="${trans.id}" data-status="${trans.status}">
                         <td><input type="checkbox" class="trans-checkbox" data-trans-id="${trans.id}" onclick="event.stopPropagation(); selectTransaction('${trans.id}')"></td>
                         <td>${trans.date.toLocaleDateString()} - ${escapedDesc}</td>
+                        <td></td>
                         <td style="text-align: right;">
                             $${Math.abs(trans.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}
                         </td>
@@ -1768,7 +1843,7 @@
             });
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="8" style="text-align: center; padding: 40px;">No data loaded</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="9" style="text-align: center; padding: 40px;">No data loaded</td></tr>';
     }
 
     // ============================================================================
@@ -2637,6 +2712,229 @@
             statusByYearChartInstance.destroy();
             statusByYearChartInstance = null;
         }
+    }
+
+    // ============================================================================
+    // VENDOR GROUP MANAGEMENT
+    // ============================================================================
+    function openGroupManagementModal() {
+        loadVendorGroupsFromStorage();
+        renderGroupsList();
+        updateGroupFilterButtons();
+        document.getElementById('groupManagementModal').style.display = 'flex';
+    }
+
+    function closeGroupManagementModal() {
+        document.getElementById('groupManagementModal').style.display = 'none';
+        document.getElementById('newGroupName').value = '';
+        document.getElementById('newGroupColor').value = '#3498db';
+    }
+
+    function loadVendorGroupsFromStorage() {
+        try {
+            const savedDefinitions = localStorage.getItem('vendorGroupDefinitions');
+            const savedAssignments = localStorage.getItem('vendorGroupAssignments');
+
+            if (savedDefinitions) {
+                vendorGroupDefinitions = JSON.parse(savedDefinitions);
+            }
+            if (savedAssignments) {
+                vendorGroupAssignments = JSON.parse(savedAssignments);
+            }
+        } catch (err) {
+            console.error('Error loading vendor groups:', err);
+        }
+    }
+
+    function saveVendorGroupsToStorage() {
+        safeLocalStorageSet('vendorGroupDefinitions', vendorGroupDefinitions);
+        safeLocalStorageSet('vendorGroupAssignments', vendorGroupAssignments);
+    }
+
+    function createGroup() {
+        const nameInput = document.getElementById('newGroupName');
+        const colorInput = document.getElementById('newGroupColor');
+        const name = nameInput.value.trim();
+        const color = colorInput.value;
+
+        if (!name) {
+            alert('Please enter a group name');
+            return;
+        }
+
+        // Check for duplicate name
+        const existingGroup = Object.values(vendorGroupDefinitions).find(g => g.name.toLowerCase() === name.toLowerCase());
+        if (existingGroup) {
+            alert('A group with this name already exists');
+            return;
+        }
+
+        // Create group with unique ID
+        const groupId = 'group_' + Date.now();
+        vendorGroupDefinitions[groupId] = {
+            name: name,
+            color: color
+        };
+
+        saveVendorGroupsToStorage();
+        renderGroupsList();
+        updateGroupFilterButtons();
+
+        // Clear inputs
+        nameInput.value = '';
+        colorInput.value = '#3498db';
+
+        // Refresh vendor table to show new group option
+        updateVendorTable();
+    }
+
+    function deleteGroup(groupId) {
+        const group = vendorGroupDefinitions[groupId];
+        if (!confirm(`Delete group "${group.name}"? Vendors in this group will become ungrouped.`)) {
+            return;
+        }
+
+        // Remove all assignments to this group
+        Object.keys(vendorGroupAssignments).forEach(vendor => {
+            if (vendorGroupAssignments[vendor] === groupId) {
+                delete vendorGroupAssignments[vendor];
+            }
+        });
+
+        delete vendorGroupDefinitions[groupId];
+        saveVendorGroupsToStorage();
+        renderGroupsList();
+        updateGroupFilterButtons();
+        updateVendorTable();
+    }
+
+    function renameGroup(groupId) {
+        const group = vendorGroupDefinitions[groupId];
+        const newName = prompt('Enter new group name:', group.name);
+
+        if (!newName || newName.trim() === '') {
+            return;
+        }
+
+        const trimmedName = newName.trim();
+
+        // Check for duplicate
+        const existingGroup = Object.entries(vendorGroupDefinitions).find(
+            ([id, g]) => id !== groupId && g.name.toLowerCase() === trimmedName.toLowerCase()
+        );
+
+        if (existingGroup) {
+            alert('A group with this name already exists');
+            return;
+        }
+
+        group.name = trimmedName;
+        saveVendorGroupsToStorage();
+        renderGroupsList();
+        updateGroupFilterButtons();
+        updateVendorTable();
+    }
+
+    function changeGroupColor(groupId) {
+        const group = vendorGroupDefinitions[groupId];
+        const newColor = prompt('Enter color (hex code):', group.color);
+
+        if (!newColor) {
+            return;
+        }
+
+        group.color = newColor;
+        saveVendorGroupsToStorage();
+        renderGroupsList();
+        updateGroupFilterButtons();
+        updateVendorTable();
+    }
+
+    function renderGroupsList() {
+        const container = document.getElementById('groupsList');
+        const groups = Object.entries(vendorGroupDefinitions);
+
+        if (groups.length === 0) {
+            container.innerHTML = '<em style="color: #95a5a6;">No groups created yet</em>';
+            return;
+        }
+
+        let html = '<div style="display: flex; flex-direction: column; gap: 10px;">';
+
+        groups.forEach(([groupId, group]) => {
+            const vendorCount = Object.values(vendorGroupAssignments).filter(g => g === groupId).length;
+
+            html += `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: white; border-radius: 6px; border: 1px solid #e0e0e0;">
+                    <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
+                        <div style="width: 20px; height: 20px; background: ${escapeHtml(group.color)}; border-radius: 4px; border: 1px solid #ddd;"></div>
+                        <strong style="color: #2c3e50;">${escapeHtml(group.name)}</strong>
+                        <span style="font-size: 12px; color: #7f8c8d;">(${vendorCount} vendors)</span>
+                    </div>
+                    <div style="display: flex; gap: 5px;">
+                        <button onclick="renameGroup('${groupId}')" style="padding: 5px 10px; font-size: 12px; background: var(--color-info);">✏️ Rename</button>
+                        <button onclick="changeGroupColor('${groupId}')" style="padding: 5px 10px; font-size: 12px; background: var(--color-info);">🎨 Color</button>
+                        <button onclick="deleteGroup('${groupId}')" style="padding: 5px 10px; font-size: 12px; background: var(--color-danger);">🗑️ Delete</button>
+                    </div>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    function assignVendorToGroup(vendorName, groupId) {
+        if (groupId === '' || groupId === 'none') {
+            delete vendorGroupAssignments[vendorName];
+        } else {
+            vendorGroupAssignments[vendorName] = groupId;
+        }
+
+        saveVendorGroupsToStorage();
+        updateGroupFilterButtons();
+    }
+
+    function updateGroupFilterButtons() {
+        const container = document.getElementById('groupFilterButtons');
+
+        // Count vendors per group
+        const groupCounts = {};
+        Object.values(vendorGroupDefinitions).forEach(group => {
+            groupCounts[group.name] = 0;
+        });
+
+        Object.values(vendorGroupAssignments).forEach(groupId => {
+            const group = vendorGroupDefinitions[groupId];
+            if (group) {
+                groupCounts[group.name] = (groupCounts[group.name] || 0) + 1;
+            }
+        });
+
+        const ungroupedCount = Object.keys(vendorGroups).length - Object.keys(vendorGroupAssignments).length;
+
+        let html = `
+            <button id="groupFilterAll" onclick="filterByGroup('all')" style="background: ${currentGroupFilter === 'all' ? '#3498db' : '#ecf0f1'}; color: ${currentGroupFilter === 'all' ? 'white' : '#2c3e50'}; font-weight: ${currentGroupFilter === 'all' ? 'bold' : 'normal'};">All Groups</button>
+            <button id="groupFilterUngrouped" onclick="filterByGroup('ungrouped')" style="background: ${currentGroupFilter === 'ungrouped' ? '#95a5a6' : '#ecf0f1'}; color: ${currentGroupFilter === 'ungrouped' ? 'white' : '#2c3e50'}; font-weight: ${currentGroupFilter === 'ungrouped' ? 'bold' : 'normal'};">Ungrouped (${ungroupedCount})</button>
+        `;
+
+        Object.entries(vendorGroupDefinitions).forEach(([groupId, group]) => {
+            const count = groupCounts[group.name] || 0;
+            const isActive = currentGroupFilter === groupId;
+            html += `
+                <button onclick="filterByGroup('${groupId}')" style="background: ${isActive ? group.color : '#ecf0f1'}; color: ${isActive ? 'white' : '#2c3e50'}; font-weight: ${isActive ? 'bold' : 'normal'}; border: 2px solid ${group.color};">
+                    ${escapeHtml(group.name)} (${count})
+                </button>
+            `;
+        });
+
+        container.innerHTML = html;
+    }
+
+    function filterByGroup(groupFilter) {
+        currentGroupFilter = groupFilter;
+        updateGroupFilterButtons();
+        updateVendorTable();
     }
 
     function updateDocumentStats() {
