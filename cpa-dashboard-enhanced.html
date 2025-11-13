@@ -1124,6 +1124,7 @@
     let vendorGroupDefinitions = {}; // {groupId: {name: 'Travel', color: '#3498db'}}
     let vendorGroupAssignments = {}; // {vendorName: 'groupId'}
     let currentGroupFilter = 'all';
+    let vendorNotes = {}; // {vendorName: 'note text'}
 
     // ============================================================================
     // INITIALIZATION
@@ -1131,6 +1132,7 @@
     window.onload = function() {
         reviewState = safeLocalStorageGet('cpaForensicReviewState', {});
         pdfAttachments = safeLocalStorageGet('pdfAttachments', {});
+        vendorNotes = safeLocalStorageGet('vendorNotes', {});
         loadVendorGroupsFromStorage();
         updateGroupFilterButtons();
 
@@ -1812,8 +1814,14 @@
                     <td style="text-align: center;">
                         <span style="font-size: 11px; color: #7f8c8d;">-</span>
                     </td>
-                    <td style="text-align: center;">
-                        <span style="font-size: 11px; color: #7f8c8d;">-</span>
+                    <td style="text-align: left; padding: 8px;" onclick="event.stopPropagation()">
+                        <div style="display: flex; align-items: center; gap: 5px;">
+                            <input type="text"
+                                   value="${escapeHtml(vendorNotes[vendorName] || '')}"
+                                   placeholder="Add vendor note..."
+                                   onchange="saveVendorNote('${vendorName.replace(/'/g, "\\'")}', this.value)"
+                                   style="flex: 1; padding: 4px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; color: #34495e; max-width: 250px;">
+                        </div>
                     </td>
                     <td style="text-align: center;">
                         ${docsCount > 0 ? '📎 ' + docsCount : '-'}
@@ -3046,6 +3054,18 @@
         currentGroupFilter = groupFilter;
         updateGroupFilterButtons();
         updateVendorTable();
+    }
+
+    // ============================================================================
+    // VENDOR NOTES
+    // ============================================================================
+    function saveVendorNote(vendorName, noteText) {
+        if (noteText.trim() === '') {
+            delete vendorNotes[vendorName];
+        } else {
+            vendorNotes[vendorName] = noteText.trim();
+        }
+        safeLocalStorageSet('vendorNotes', vendorNotes);
     }
 
     // ============================================================================
