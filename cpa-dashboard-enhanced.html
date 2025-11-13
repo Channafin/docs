@@ -846,9 +846,12 @@
                 </button>
             </div>
 
-            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
-                <button onclick="closeModal()" style="background: var(--color-secondary);">Cancel</button>
-                <button onclick="saveReview()">💾 Save Review</button>
+            <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 20px;">
+                <button onclick="openSplitModal()" style="background: #e67e22; color: white;">✂️ Split Transaction</button>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="closeModal()" style="background: var(--color-secondary);">Cancel</button>
+                    <button onclick="saveReview()">💾 Save Review</button>
+                </div>
             </div>
         </div>
     </div>
@@ -955,6 +958,51 @@
 
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
                 <button onclick="closeGroupManagementModal()" style="background: var(--color-secondary);">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Split Transaction Modal -->
+    <div id="splitModal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <span class="close" onclick="closeSplitModal()">&times;</span>
+            <h2>✂️ Split Transaction</h2>
+            <p style="color: #7f8c8d; margin: 10px 0;">Break this transaction into multiple parts (e.g., partially mission-related, partially not)</p>
+
+            <div id="splitTransactionInfo" style="margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; font-size: 14px;"></div>
+
+            <div style="margin: 20px 0;">
+                <h3 style="color: #34495e; font-size: 16px; margin-bottom: 10px;">Split Parts</h3>
+                <div id="splitPartsList" style="display: flex; flex-direction: column; gap: 15px;">
+                    <!-- Split parts will be added here -->
+                </div>
+
+                <button onclick="addSplitPart()" style="background: var(--color-success); margin-top: 15px; width: 100%;">
+                    ➕ Add Split Part
+                </button>
+            </div>
+
+            <div style="padding: 15px; background: #ecf0f1; border-radius: 6px; margin: 15px 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <strong>Original Amount:</strong>
+                    <span id="splitOriginalAmount">$0.00</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                    <strong>Split Total:</strong>
+                    <span id="splitTotal" style="font-weight: bold;">$0.00</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                    <strong>Remaining:</strong>
+                    <span id="splitRemaining" style="font-weight: bold;">$0.00</span>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 20px;">
+                <button onclick="removeSplits()" style="background: var(--color-danger);">🗑️ Remove All Splits</button>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="closeSplitModal()" style="background: var(--color-secondary);">Cancel</button>
+                    <button onclick="saveSplits()" style="background: var(--color-success);">💾 Save Splits</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1808,38 +1856,101 @@
                                    <br><span style="font-size: 10px; color: ${confidenceColor}; font-weight: bold;" title="${escapeHtml(tooltipText)}">${confidenceText} ${highestScore}%</span>`;
                 }
 
-                html += `
-                    <tr class="transaction-row" data-vendor="${vendorId}" data-trans-id="${trans.id}" data-status="${trans.status}">
-                        <td><input type="checkbox" class="trans-checkbox" data-trans-id="${trans.id}" onclick="event.stopPropagation(); selectTransaction('${trans.id}')"></td>
-                        <td>${trans.date.toLocaleDateString()} - ${escapedDesc}</td>
-                        <td></td>
-                        <td style="text-align: right;">
-                            $${Math.abs(trans.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}
-                        </td>
-                        <td style="text-align: center;">
-                            <span class="status-indicator status-${trans.status}"></span>
-                            ${trans.status === 'green' ? 'Green' : trans.status === 'red' ? 'Red' : trans.status === 'yellow' ? 'Yellow' : trans.status === 'reclass' ? 'Reclass' : 'Unreviewed'}
-                        </td>
-                        <td style="text-align: center; font-size: 11px; color: #5a6c7d;">
-                            ${categoryDisplay}
-                        </td>
-                        <td style="text-align: left; font-size: 11px; color: #34495e; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 8px;" title="${escapedNotes}">
-                            ${escapedNotes || '<span style="color: #bdc3c7;">-</span>'}
-                        </td>
-                        <td style="text-align: center;">
-                            ${docsDisplay}
-                        </td>
-                        <td style="text-align: center;">
-                            <div class="action-buttons">
-                                <button class="btn-small btn-green" onclick="quickStatus('${trans.id}', 'green', event)" title="Mark as Mission (Green)">✅</button>
-                                <button class="btn-small btn-red" onclick="quickStatus('${trans.id}', 'red', event)" title="Mark as Non-Mission (Red)">❌</button>
-                                <button class="btn-small btn-yellow" onclick="quickStatus('${trans.id}', 'yellow', event)" title="Mark for Review (Yellow)">⚠️</button>
-                                <button class="btn-small" onclick="openReviewModal('${trans.id}', event)" title="Open Full Review Form">📝</button>
-                                <button class="btn-small" onclick="openJEModal('${trans.id}', event)" style="background: var(--color-info);" title="Generate Journal Entry">🧾</button>
-                            </div>
-                        </td>
-                    </tr>
-                `;
+                // Check if transaction has splits
+                const hasSplits = review.splits && review.splits.length > 0;
+
+                if (hasSplits) {
+                    // Parent transaction row (shows as split)
+                    html += `
+                        <tr class="transaction-row" data-vendor="${vendorId}" data-trans-id="${trans.id}" data-status="${trans.status}" style="background: #fef9e7;">
+                            <td><input type="checkbox" class="trans-checkbox" data-trans-id="${trans.id}" onclick="event.stopPropagation(); selectTransaction('${trans.id}')"></td>
+                            <td><strong>✂️ ${trans.date.toLocaleDateString()} - ${escapedDesc}</strong> <span style="color: #e67e22; font-size: 11px;">(Split into ${review.splits.length} parts)</span></td>
+                            <td></td>
+                            <td style="text-align: right; color: #7f8c8d;">
+                                $${Math.abs(trans.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}
+                            </td>
+                            <td style="text-align: center;" colspan="4">
+                                <span style="color: #7f8c8d; font-size: 11px;">See split details below</span>
+                            </td>
+                            <td style="text-align: center;">
+                                <button class="btn-small" onclick="openReviewModal('${trans.id}', event)" title="Edit Splits">📝</button>
+                            </td>
+                        </tr>
+                    `;
+
+                    // Split parts as child rows
+                    review.splits.forEach((split, splitIndex) => {
+                        const splitCategoryLabel = {
+                            'verified': '✓ Verified',
+                            'mission': '🎯 Mission',
+                            'authorized': '✅ Authorized',
+                            'suspicious': '⚠️ Suspicious',
+                            'duplicate': '📋 Duplicate',
+                            'personal': '👤 Personal'
+                        };
+                        const splitCategoryDisplay = split.category ? (splitCategoryLabel[split.category] || split.category) : '-';
+                        const splitNotesEscaped = split.notes ? escapeHtml(split.notes.substring(0, 100)) : '';
+
+                        html += `
+                            <tr class="transaction-row transaction-split" data-vendor="${vendorId}" data-trans-id="${trans.id}" data-status="${split.status}" style="background: #fcf3cf;">
+                                <td style="padding-left: 40px;"></td>
+                                <td style="padding-left: 40px; font-size: 12px; color: #5a6c7d;">└─ Part ${splitIndex + 1}: ${splitNotesEscaped || '(No notes)'}</td>
+                                <td></td>
+                                <td style="text-align: right; font-weight: bold;">
+                                    $${Math.abs(parseFloat(split.amount)).toLocaleString('en-US', {minimumFractionDigits: 2})}
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="status-indicator status-${split.status}"></span>
+                                    ${split.status === 'green' ? 'Green' : split.status === 'red' ? 'Red' : split.status === 'yellow' ? 'Yellow' : split.status === 'reclass' ? 'Reclass' : 'Unreviewed'}
+                                </td>
+                                <td style="text-align: center; font-size: 11px; color: #5a6c7d;">
+                                    ${splitCategoryDisplay}
+                                </td>
+                                <td style="text-align: left; font-size: 11px; color: #34495e; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 8px;" title="${splitNotesEscaped}">
+                                    ${splitNotesEscaped || '<span style="color: #bdc3c7;">-</span>'}
+                                </td>
+                                <td style="text-align: center;">
+                                    ${docsDisplay}
+                                </td>
+                                <td></td>
+                            </tr>
+                        `;
+                    });
+                } else {
+                    // Regular transaction row (not split)
+                    html += `
+                        <tr class="transaction-row" data-vendor="${vendorId}" data-trans-id="${trans.id}" data-status="${trans.status}">
+                            <td><input type="checkbox" class="trans-checkbox" data-trans-id="${trans.id}" onclick="event.stopPropagation(); selectTransaction('${trans.id}')"></td>
+                            <td>${trans.date.toLocaleDateString()} - ${escapedDesc}</td>
+                            <td></td>
+                            <td style="text-align: right;">
+                                $${Math.abs(trans.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}
+                            </td>
+                            <td style="text-align: center;">
+                                <span class="status-indicator status-${trans.status}"></span>
+                                ${trans.status === 'green' ? 'Green' : trans.status === 'red' ? 'Red' : trans.status === 'yellow' ? 'Yellow' : trans.status === 'reclass' ? 'Reclass' : 'Unreviewed'}
+                            </td>
+                            <td style="text-align: center; font-size: 11px; color: #5a6c7d;">
+                                ${categoryDisplay}
+                            </td>
+                            <td style="text-align: left; font-size: 11px; color: #34495e; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 8px;" title="${escapedNotes}">
+                                ${escapedNotes || '<span style="color: #bdc3c7;">-</span>'}
+                            </td>
+                            <td style="text-align: center;">
+                                ${docsDisplay}
+                            </td>
+                            <td style="text-align: center;">
+                                <div class="action-buttons">
+                                    <button class="btn-small btn-green" onclick="quickStatus('${trans.id}', 'green', event)" title="Mark as Mission (Green)">✅</button>
+                                    <button class="btn-small btn-red" onclick="quickStatus('${trans.id}', 'red', event)" title="Mark as Non-Mission (Red)">❌</button>
+                                    <button class="btn-small btn-yellow" onclick="quickStatus('${trans.id}', 'yellow', event)" title="Mark for Review (Yellow)">⚠️</button>
+                                    <button class="btn-small" onclick="openReviewModal('${trans.id}', event)" title="Open Full Review Form">📝</button>
+                                    <button class="btn-small" onclick="openJEModal('${trans.id}', event)" style="background: var(--color-info);" title="Generate Journal Entry">🧾</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }
             });
         });
 
@@ -2935,6 +3046,233 @@
         currentGroupFilter = groupFilter;
         updateGroupFilterButtons();
         updateVendorTable();
+    }
+
+    // ============================================================================
+    // TRANSACTION SPLITTING
+    // ============================================================================
+    let splitParts = [];
+    let currentSplitTransactionId = null;
+
+    function openSplitModal() {
+        if (!currentTransactionId) {
+            alert('No transaction selected');
+            return;
+        }
+
+        const trans = allData.find(t => t.id === currentTransactionId);
+        if (!trans) {
+            alert('Transaction not found');
+            return;
+        }
+
+        currentSplitTransactionId = currentTransactionId;
+
+        // Load existing splits if any
+        const review = reviewState[currentTransactionId] || {};
+        if (review.splits && review.splits.length > 0) {
+            splitParts = JSON.parse(JSON.stringify(review.splits)); // Deep copy
+        } else {
+            // Initialize with two parts for convenience
+            splitParts = [
+                { amount: '', status: 'green', category: '', notes: '' },
+                { amount: '', status: 'red', category: '', notes: '' }
+            ];
+        }
+
+        // Show transaction info
+        document.getElementById('splitTransactionInfo').innerHTML = `
+            <strong>Vendor:</strong> ${escapeHtml(trans.vendor)}<br>
+            <strong>Date:</strong> ${trans.date.toLocaleDateString()}<br>
+            <strong>Description:</strong> ${escapeHtml(trans.description)}<br>
+            <strong>Original Amount:</strong> $${Math.abs(trans.amount).toLocaleString('en-US', {minimumFractionDigits: 2})}
+        `;
+
+        document.getElementById('splitOriginalAmount').textContent =
+            '$' + Math.abs(trans.amount).toLocaleString('en-US', {minimumFractionDigits: 2});
+
+        renderSplitParts();
+        document.getElementById('splitModal').style.display = 'flex';
+    }
+
+    function closeSplitModal() {
+        document.getElementById('splitModal').style.display = 'none';
+        splitParts = [];
+        currentSplitTransactionId = null;
+    }
+
+    function addSplitPart() {
+        splitParts.push({ amount: '', status: 'green', category: '', notes: '' });
+        renderSplitParts();
+    }
+
+    function removeSplitPart(index) {
+        splitParts.splice(index, 1);
+        if (splitParts.length === 0) {
+            // Keep at least one part
+            splitParts.push({ amount: '', status: 'green', category: '', notes: '' });
+        }
+        renderSplitParts();
+    }
+
+    function renderSplitParts() {
+        const container = document.getElementById('splitPartsList');
+
+        let html = '';
+        splitParts.forEach((part, index) => {
+            html += `
+                <div style="border: 1px solid #ddd; border-radius: 6px; padding: 15px; background: white;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <strong style="color: #34495e;">Part ${index + 1}</strong>
+                        ${splitParts.length > 1 ? `<button onclick="removeSplitPart(${index})" style="padding: 4px 8px; font-size: 12px; background: var(--color-danger);">🗑️ Remove</button>` : ''}
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                        <div>
+                            <label style="font-size: 12px; color: #7f8c8d; display: block; margin-bottom: 4px;">Amount</label>
+                            <input type="number" step="0.01" value="${part.amount}" onchange="updateSplitPart(${index}, 'amount', this.value)"
+                                   style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 12px; color: #7f8c8d; display: block; margin-bottom: 4px;">Status</label>
+                            <select onchange="updateSplitPart(${index}, 'status', this.value)"
+                                    style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 4px;">
+                                <option value="green" ${part.status === 'green' ? 'selected' : ''}>✅ Green - Mission</option>
+                                <option value="red" ${part.status === 'red' ? 'selected' : ''}>❌ Red - Non-Mission</option>
+                                <option value="yellow" ${part.status === 'yellow' ? 'selected' : ''}>⚠️ Yellow - Review</option>
+                                <option value="reclass" ${part.status === 'reclass' ? 'selected' : ''}>🔄 Reclass to Revenue</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 12px; color: #7f8c8d; display: block; margin-bottom: 4px;">Category</label>
+                        <select onchange="updateSplitPart(${index}, 'category', this.value)"
+                                style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="">-- Select Category --</option>
+                            <option value="verified" ${part.category === 'verified' ? 'selected' : ''}>Verified with Documentation</option>
+                            <option value="mission" ${part.category === 'mission' ? 'selected' : ''}>Mission/Program Related</option>
+                            <option value="authorized" ${part.category === 'authorized' ? 'selected' : ''}>Properly Authorized</option>
+                            <option value="suspicious" ${part.category === 'suspicious' ? 'selected' : ''}>Suspicious - Investigate</option>
+                            <option value="duplicate" ${part.category === 'duplicate' ? 'selected' : ''}>Duplicate Transaction</option>
+                            <option value="personal" ${part.category === 'personal' ? 'selected' : ''}>Personal/Non-Business</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label style="font-size: 12px; color: #7f8c8d; display: block; margin-bottom: 4px;">Notes</label>
+                        <textarea onchange="updateSplitPart(${index}, 'notes', this.value)"
+                                  style="width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 4px; min-height: 60px;">${escapeHtml(part.notes || '')}</textarea>
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+        updateSplitTotals();
+    }
+
+    function updateSplitPart(index, field, value) {
+        splitParts[index][field] = value;
+        updateSplitTotals();
+    }
+
+    function updateSplitTotals() {
+        if (!currentSplitTransactionId) return;
+
+        const trans = allData.find(t => t.id === currentSplitTransactionId);
+        if (!trans) return;
+
+        const originalAmount = Math.abs(trans.amount);
+        const splitTotal = splitParts.reduce((sum, part) => {
+            const amount = parseFloat(part.amount) || 0;
+            return sum + Math.abs(amount);
+        }, 0);
+
+        const remaining = originalAmount - splitTotal;
+
+        document.getElementById('splitTotal').textContent =
+            '$' + splitTotal.toLocaleString('en-US', {minimumFractionDigits: 2});
+
+        const remainingEl = document.getElementById('splitRemaining');
+        remainingEl.textContent = '$' + Math.abs(remaining).toLocaleString('en-US', {minimumFractionDigits: 2});
+
+        // Color code based on remaining
+        if (Math.abs(remaining) < 0.01) {
+            remainingEl.style.color = '#27ae60'; // Green - balanced
+        } else {
+            remainingEl.style.color = '#e74c3c'; // Red - not balanced
+        }
+    }
+
+    function saveSplits() {
+        if (!currentSplitTransactionId) {
+            alert('No transaction selected');
+            return;
+        }
+
+        const trans = allData.find(t => t.id === currentSplitTransactionId);
+        if (!trans) {
+            alert('Transaction not found');
+            return;
+        }
+
+        // Validate splits
+        const originalAmount = Math.abs(trans.amount);
+        const splitTotal = splitParts.reduce((sum, part) => {
+            const amount = parseFloat(part.amount) || 0;
+            return sum + Math.abs(amount);
+        }, 0);
+
+        if (Math.abs(originalAmount - splitTotal) > 0.01) {
+            alert(`Split amounts must equal the original amount.\nOriginal: $${originalAmount.toFixed(2)}\nSplit Total: $${splitTotal.toFixed(2)}\nDifference: $${Math.abs(originalAmount - splitTotal).toFixed(2)}`);
+            return;
+        }
+
+        // Validate all parts have amounts
+        for (let i = 0; i < splitParts.length; i++) {
+            if (!splitParts[i].amount || parseFloat(splitParts[i].amount) === 0) {
+                alert(`Part ${i + 1} is missing an amount`);
+                return;
+            }
+        }
+
+        // Save splits to review state
+        if (!reviewState[currentSplitTransactionId]) {
+            reviewState[currentSplitTransactionId] = {};
+        }
+
+        reviewState[currentSplitTransactionId].splits = JSON.parse(JSON.stringify(splitParts));
+        reviewState[currentSplitTransactionId].reviewDate = new Date().toISOString();
+
+        safeLocalStorageSet('cpaForensicReviewState', reviewState);
+
+        // Update dashboard
+        groupByVendor();
+        updateDashboard();
+
+        alert(`Transaction split into ${splitParts.length} parts successfully!`);
+        closeSplitModal();
+        closeModal(); // Also close the review modal
+    }
+
+    function removeSplits() {
+        if (!currentSplitTransactionId) return;
+
+        if (!confirm('Remove all splits from this transaction? It will revert to the original single transaction.')) {
+            return;
+        }
+
+        if (reviewState[currentSplitTransactionId]) {
+            delete reviewState[currentSplitTransactionId].splits;
+            safeLocalStorageSet('cpaForensicReviewState', reviewState);
+        }
+
+        groupByVendor();
+        updateDashboard();
+
+        alert('Splits removed. Transaction restored to original.');
+        closeSplitModal();
     }
 
     function updateDocumentStats() {
