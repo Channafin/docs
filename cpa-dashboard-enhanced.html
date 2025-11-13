@@ -676,6 +676,10 @@
                     <div class="chart-title">🚨 Top High-Risk Vendors</div>
                     <canvas id="riskChart"></canvas>
                 </div>
+                <div class="chart-container">
+                    <div class="chart-title">📊 Transaction Count by Group</div>
+                    <canvas id="groupVolumeChart"></canvas>
+                </div>
             </div>
         </div>
 
@@ -1732,6 +1736,99 @@
                             formatter: (value, context) => {
                                 const vendor = vendorRiskData[context.dataIndex];
                                 return `${value.toFixed(1)} (${vendor.count} txns)`;
+                            }
+                        }
+                    }
+                },
+                plugins: [ChartDataLabels]
+            });
+        }
+
+        // Transaction Count by Group
+        const groupVolumeCtx = document.getElementById('groupVolumeChart');
+        if (groupVolumeCtx) {
+            // Aggregate transaction counts by group
+            const groupStats = {
+                'Ungrouped': { count: 0, amount: 0 }
+            };
+
+            // Initialize with all defined groups
+            Object.entries(vendorGroupDefinitions).forEach(([groupId, group]) => {
+                groupStats[group.name] = { count: 0, amount: 0 };
+            });
+
+            // Count transactions per group
+            Object.entries(vendorGroups).forEach(([vendorName, vendorData]) => {
+                const assignedGroupId = vendorGroupAssignments[vendorName];
+                if (assignedGroupId && vendorGroupDefinitions[assignedGroupId]) {
+                    const groupName = vendorGroupDefinitions[assignedGroupId].name;
+                    groupStats[groupName].count += vendorData.count;
+                    groupStats[groupName].amount += vendorData.totalAmount;
+                } else {
+                    groupStats['Ungrouped'].count += vendorData.count;
+                    groupStats['Ungrouped'].amount += vendorData.totalAmount;
+                }
+            });
+
+            // Filter out groups with no transactions
+            const groupData = Object.entries(groupStats)
+                .filter(([name, data]) => data.count > 0)
+                .sort((a, b) => b[1].count - a[1].count);
+
+            // Get colors for groups
+            const groupColors = groupData.map(([name]) => {
+                if (name === 'Ungrouped') return '#95a5a6';
+                const groupEntry = Object.entries(vendorGroupDefinitions).find(
+                    ([id, g]) => g.name === name
+                );
+                return groupEntry ? groupEntry[1].color : '#3498db';
+            });
+
+            charts.groupVolume = new Chart(groupVolumeCtx, {
+                type: 'bar',
+                data: {
+                    labels: groupData.map(([name]) => name),
+                    datasets: [{
+                        label: 'Transaction Count',
+                        data: groupData.map(([, data]) => data.count),
+                        backgroundColor: groupColors,
+                        borderColor: groupColors.map(c => c),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Number of Transactions'
+                            },
+                            ticks: {
+                                precision: 0
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                afterLabel: function(context) {
+                                    const groupName = groupData[context.dataIndex][0];
+                                    const amount = groupData[context.dataIndex][1].amount;
+                                    return `Total Amount: $${Math.abs(amount).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+                                }
+                            }
+                        },
+                        datalabels: {
+                            display: true,
+                            anchor: 'end',
+                            align: 'top',
+                            color: '#2c3e50',
+                            font: { weight: 'bold', size: 11 },
+                            formatter: (value) => {
+                                return value.toLocaleString();
                             }
                         }
                     }
