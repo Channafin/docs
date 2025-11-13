@@ -611,7 +611,7 @@
 
         <!-- Tabs -->
         <div class="tabs">
-            <button class="tab active" onclick="switchTab('overview')">📊 Overview & Analysis</button>
+            <button class="tab active" onclick="switchTab('overview')">📊 Dashboard</button>
             <button class="tab" onclick="switchTab('review')">✅ Transaction Review</button>
             <button class="tab" onclick="switchTab('forensics')">🔍 Forensic Insights</button>
             <button class="tab" onclick="switchTab('documents')">📎 Document Management</button>
@@ -665,16 +665,12 @@
                     <canvas id="statusChart"></canvas>
                 </div>
                 <div class="chart-container">
-                    <div class="chart-title">Monthly Transaction Volume</div>
+                    <div class="chart-title">Transaction Volume</div>
                     <canvas id="volumeChart"></canvas>
                 </div>
                 <div class="chart-container">
                     <div class="chart-title">Top 10 Vendors by Amount</div>
                     <canvas id="vendorChart"></canvas>
-                </div>
-                <div class="chart-container">
-                    <div class="chart-title">🚨 Top High-Risk Vendors</div>
-                    <canvas id="riskChart"></canvas>
                 </div>
                 <div class="chart-container">
                     <div class="chart-title">📊 Transaction Count by Group</div>
@@ -1661,81 +1657,6 @@
                                     return '$' + (value / 1000).toFixed(0) + 'K';
                                 }
                                 return '$' + value.toFixed(0);
-                            }
-                        }
-                    }
-                },
-                plugins: [ChartDataLabels]
-            });
-        }
-
-        // Top High-Risk Vendors
-        const vendorRiskData = Object.entries(vendorGroups)
-            .map(([vendor, data]) => ({
-                vendor: vendor,
-                avgRisk: parseFloat(data.avgRisk),
-                count: data.count,
-                totalAmount: data.totalAmount
-            }))
-            .sort((a, b) => b.avgRisk - a.avgRisk)
-            .slice(0, 10);
-
-        const riskCtx = document.getElementById('riskChart');
-        if (riskCtx) {
-            charts.risk = new Chart(riskCtx, {
-                type: 'bar',
-                data: {
-                    labels: vendorRiskData.map(v => v.vendor.substring(0, 25)),
-                    datasets: [{
-                        label: 'Average Risk Score',
-                        data: vendorRiskData.map(v => v.avgRisk),
-                        backgroundColor: vendorRiskData.map(v =>
-                            v.avgRisk >= 7 ? '#e74c3c' :
-                            v.avgRisk >= 4 ? '#f39c12' : '#27ae60'
-                        )
-                    }]
-                },
-                options: {
-                    indexAxis: 'y',
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    scales: {
-                        x: {
-                            beginAtZero: true,
-                            max: 10,
-                            title: {
-                                display: true,
-                                text: 'Risk Score (0-10)'
-                            }
-                        }
-                    },
-                    plugins: {
-                        tooltip: {
-                            callbacks: {
-                                afterLabel: function(context) {
-                                    const vendor = vendorRiskData[context.dataIndex];
-                                    return [
-                                        `Transactions: ${vendor.count}`,
-                                        `Total Amount: $${Math.abs(vendor.totalAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}`
-                                    ];
-                                }
-                            }
-                        },
-                        datalabels: {
-                            display: true,
-                            anchor: 'end',
-                            align: 'right',
-                            color: '#fff',
-                            backgroundColor: function(context) {
-                                const value = context.dataset.data[context.dataIndex];
-                                return value >= 7 ? '#c0392b' : value >= 4 ? '#e67e22' : '#27ae60';
-                            },
-                            borderRadius: 3,
-                            padding: 4,
-                            font: { weight: 'bold', size: 11 },
-                            formatter: (value, context) => {
-                                const vendor = vendorRiskData[context.dataIndex];
-                                return `${value.toFixed(1)} (${vendor.count} txns)`;
                             }
                         }
                     }
