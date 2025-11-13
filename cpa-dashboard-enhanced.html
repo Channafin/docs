@@ -635,6 +635,9 @@
                 </div>
                 <button onclick="updateDashboard()">🔄 Refresh Analysis</button>
                 <button onclick="toggleShortcutsHelp()">⌨️ Keyboard Shortcuts</button>
+                <button onclick="exportReviewData()" style="background: #27ae60; color: white;">💾 Export Reviews</button>
+                <button onclick="importReviewData()" style="background: #e67e22; color: white;">📥 Import Reviews</button>
+                <input type="file" id="importFileInput" accept=".json" style="display: none;">
             </div>
 
             <!-- Chart Filters -->
@@ -3706,6 +3709,115 @@
         safeLocalStorageSet('jeCounter', jeCounter);
 
         alert('✅ CSV downloaded! Import into QuickBooks.');
+    }
+
+    // Export review data
+    function exportReviewData() {
+        const exportData = {
+            version: '1.0',
+            exportDate: new Date().toISOString(),
+            data: {
+                transactionStatuses: safeLocalStorageGet('transactionStatuses') || {},
+                transactionNotes: safeLocalStorageGet('transactionNotes') || {},
+                vendorGroupDefinitions: safeLocalStorageGet('vendorGroupDefinitions') || {},
+                vendorGroupAssignments: safeLocalStorageGet('vendorGroupAssignments') || {},
+                vendorNotes: safeLocalStorageGet('vendorNotes') || {},
+                transactionSplits: safeLocalStorageGet('transactionSplits') || {},
+                jeCounter: safeLocalStorageGet('jeCounter') || 1
+            }
+        };
+
+        const json = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        link.download = `cpa-review-data-${timestamp}.json`;
+
+        link.click();
+        URL.revokeObjectURL(url);
+
+        alert('✅ Review data exported! Share this file with team members.');
+    }
+
+    // Import review data
+    function importReviewData() {
+        const fileInput = document.getElementById('importFileInput');
+
+        fileInput.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    const importData = JSON.parse(event.target.result);
+
+                    // Validate format
+                    if (!importData.version || !importData.data) {
+                        alert('❌ Invalid file format. Please select a valid export file.');
+                        return;
+                    }
+
+                    // Confirm before importing
+                    const confirmMsg = `Import review data from ${new Date(importData.exportDate).toLocaleString()}?\n\n` +
+                                      `This will merge with your existing data:\n` +
+                                      `- Transaction statuses and notes\n` +
+                                      `- Vendor groups and assignments\n` +
+                                      `- Vendor notes\n` +
+                                      `- Transaction splits\n\n` +
+                                      `Continue?`;
+
+                    if (!confirm(confirmMsg)) {
+                        return;
+                    }
+
+                    // Import data (merge with existing)
+                    const mergeData = (storageKey, importedData) => {
+                        const existing = safeLocalStorageGet(storageKey) || {};
+                        const merged = { ...existing, ...importedData };
+                        safeLocalStorageSet(storageKey, merged);
+                    };
+
+                    mergeData('transactionStatuses', importData.data.transactionStatuses);
+                    mergeData('transactionNotes', importData.data.transactionNotes);
+                    mergeData('vendorGroupDefinitions', importData.data.vendorGroupDefinitions);
+                    mergeData('vendorGroupAssignments', importData.data.vendorGroupAssignments);
+                    mergeData('vendorNotes', importData.data.vendorNotes);
+                    mergeData('transactionSplits', importData.data.transactionSplits);
+
+                    // Update JE counter if imported one is higher
+                    const currentCounter = safeLocalStorageGet('jeCounter') || 1;
+                    const importedCounter = importData.data.jeCounter || 1;
+                    if (importedCounter > currentCounter) {
+                        safeLocalStorageSet('jeCounter', importedCounter);
+                    }
+
+                    alert('✅ Review data imported successfully! Refreshing dashboard...');
+
+                    // Reload data and refresh
+                    transactionStatuses = safeLocalStorageGet('transactionStatuses') || {};
+                    transactionNotes = safeLocalStorageGet('transactionNotes') || {};
+                    vendorGroupDefinitions = safeLocalStorageGet('vendorGroupDefinitions') || {};
+                    vendorGroupAssignments = safeLocalStorageGet('vendorGroupAssignments') || {};
+                    vendorNotes = safeLocalStorageGet('vendorNotes') || {};
+                    transactionSplits = safeLocalStorageGet('transactionSplits') || {};
+                    jeCounter = safeLocalStorageGet('jeCounter') || 1;
+
+                    updateDashboard();
+
+                } catch (error) {
+                    alert('❌ Error importing file: ' + error.message);
+                }
+            };
+
+            reader.readAsText(file);
+            fileInput.value = ''; // Reset input
+        };
+
+        fileInput.click();
     }
 
     // Close modal when clicking outside
