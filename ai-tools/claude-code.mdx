@@ -74,3 +74,92 @@ Create a `CLAUDE.md` file at the root of your documentation repository to train 
 - Include untested code examples
 - Make assumptions - always ask for clarification
 ````
+
+## Troubleshooting
+
+### Usage Policy errors
+
+If Claude Code displays a usage policy error like this:
+
+```
+API Error: Claude Code is unable to respond to this request, which appears
+to violate our Usage Policy (https://www.anthropic.com/legal/aup).
+```
+
+This happens when a request appears to violate Anthropic's [Acceptable Use Policy](https://www.anthropic.com/legal/aup).
+
+<Steps>
+<Step title="Review your request">
+  Check if your request contains content that might trigger policy filters:
+  - Requests for harmful, illegal, or malicious content
+  - Code that could be used for unauthorized access or attacks
+  - Content involving deception or manipulation
+
+  <Tip>
+  If you're working on legitimate security research, penetration testing, or CTF challenges, provide clear context about the authorized nature of your work.
+  </Tip>
+</Step>
+
+<Step title="Rephrase your request">
+  Try rephrasing your request to be more specific about your legitimate use case:
+
+  - Instead of: "Help me bypass authentication"
+  - Try: "I'm working on an authorized penetration test. Help me understand common authentication vulnerabilities for my security assessment report."
+
+  <Note>
+  Adding context about educational, defensive security, or authorized testing purposes often helps Claude understand your legitimate intent.
+  </Note>
+</Step>
+
+<Step title="Start a new session">
+  If the error persists:
+
+  1. Press **Esc** twice to edit your last message
+  2. Or start a new session with a rephrased request
+
+  <Warning>
+  Repeated policy violations may affect your account access. Ensure your requests comply with the [Anthropic Usage Policy](https://www.anthropic.com/legal/aup).
+  </Warning>
+</Step>
+
+<Step title="Try alternative models">
+  If you continue experiencing issues, try switching models:
+
+  ```bash
+  /model claude-sonnet-4-20250514
+  ```
+
+  Different model versions may have slightly different policy filtering thresholds.
+</Step>
+</Steps>
+
+### Common false positives
+
+Some legitimate documentation tasks may occasionally trigger policy filters:
+
+<AccordionGroup>
+<Accordion title="Security documentation">
+  When documenting security features or vulnerabilities:
+  - Clearly state you're writing documentation
+  - Specify the educational or defensive purpose
+  - Reference that you're documenting existing, published information
+</Accordion>
+
+<Accordion title="API authentication examples">
+  When writing authentication code examples:
+  - Use placeholder values (e.g., `YOUR_API_KEY`)
+  - Clearly label examples as demonstrations
+  - Include security best practices in your documentation
+</Accordion>
+
+<Accordion title="Error handling documentation">
+  When documenting error scenarios:
+  - Frame requests around proper error handling
+  - Emphasize defensive programming practices
+  - Focus on helping users prevent issues
+</Accordion>
+</AccordionGroup>
+
+<Info>
+If you believe you received a usage policy error incorrectly, you can report the issue at [https://github.com/anthropics/claude-code/issues](https://github.com/anthropics/claude-code/issues).
+</Info>
